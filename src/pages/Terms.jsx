@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck, Database, EyeOff, Lock, Clock, ChevronRight } from 'lucide-react';
 

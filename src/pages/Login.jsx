@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { Clock, ShieldCheck, CheckCircle, ArrowRight } from 'lucide-react';
+import { Clock, ShieldCheck, CheckCircle } from 'lucide-react';
 
 const API_URL = 'http://localhost:5000/api';
 
@@ -108,7 +108,7 @@ function Login() {
             </div>
 
             <div className="space-y-6">
-              <div className="relative flex items-center gap-3 p-4 rounded-2xl bg-gray-50 border border-gray-100 group transition-all hover:border-blue-200">
+              <div className="relative flex items-start gap-3 p-4 rounded-2xl bg-gray-50 border border-gray-100 group transition-all hover:border-blue-200">
                 <input 
                   type="checkbox" 
                   id="terms" 
@@ -117,7 +117,7 @@ function Login() {
                     setAgreed(e.target.checked);
                     if (e.target.checked) setError('');
                   }}
-                  className="w-5 h-5 text-blue-600 rounded-lg focus:ring-blue-500 border-gray-300 cursor-pointer"
+                  className="mt-1 w-5 h-5 text-blue-600 rounded-lg focus:ring-blue-500 border-gray-300 cursor-pointer"
                 />
                 <label htmlFor="terms" className="text-sm text-gray-600 cursor-pointer select-none leading-snug">
                   I agree to the <Link to="/terms" className="text-blue-600 font-bold hover:underline">Terms and Conditions</Link> regarding data privacy.
@@ -125,15 +125,22 @@ function Login() {
               </div>
 
               <div className={`transition-all duration-300 ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}>
-                <GoogleLogin 
-                  onSuccess={handleSuccess} 
-                  onError={handleError}
-                  useOneTap
-                  theme="filled_blue"
-                  shape="pill"
-                  text="continue_with"
-                  width="100%"
-                />
+                <div className="relative">
+                  <GoogleLogin 
+                    onSuccess={handleSuccess} 
+                    onError={handleError}
+                    useOneTap
+                    theme="filled_blue"
+                    shape="pill"
+                    text="continue_with"
+                    width="100%"
+                  />
+                  {isLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-6 h-6 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {error && (

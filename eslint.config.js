@@ -18,4 +18,14 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    files: ['backend/**/*.js'],
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: {
+        ecmaVersion: 2022, // Or appropriate version for Node.js
+        sourceType: 'module', // If using ES modules in backend
+      },
+    },
+  },
 ])

@@ -38,7 +38,7 @@ const upload = multer({ storage: storage });
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ojt-tracker')
     .then(() => console.log('MongoDB connected'))
-    .catch(err => console.log('MongoDB connection error:', err));
+    .catch(() => console.log('MongoDB connection error: Check if MongoDB is running and accessible.'));
 
 // Schemas
 const userSchema = new mongoose.Schema({
