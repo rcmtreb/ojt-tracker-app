@@ -6,8 +6,8 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useNavigate } from 'react-router-dom';
 
-const API_URL = 'http://localhost:5000/api';
-const BASE_URL = 'http://localhost:5000';
+const API_URL = '/api';
+const BASE_URL = '';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -94,25 +94,35 @@ function Dashboard() {
   const confirmSubmit = async () => {
     const token = localStorage.getItem('token');
     setIsSubmitting(true);
-    const data = new FormData();
-    Object.keys(formData).forEach(key => {
-        const value = formData[key] === '' && key === 'studentName' ? user.name : formData[key];
-        data.append(key, value);
-    });
-    data.append('totalHours', pendingTotalHours);
-    if (files && files.length > 0) {
-      Array.from(files).forEach(file => {
-        data.append('documentaries', file);
-      });
-    }
 
     try {
-      await axios.post(`${API_URL}/records`, data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`
+      let uploadedUrls = [];
+      if (files && files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          // request presigned URL from backend
+          const presignRes = await axios.post(`${API_URL}/s3-presign`, { filename: file.name, contentType: file.type }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+
+          const { url, key, publicUrl } = presignRes.data;
+          // upload file to S3
+          await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+          // prefer publicUrl if provided, otherwise include the key
+          uploadedUrls.push(publicUrl || key);
         }
+      }
+
+      const payload = {
+        ...formData,
+        totalHours: pendingTotalHours,
+        documentaryUrls: uploadedUrls
+      };
+
+      await axios.post(`${API_URL}/records`, payload, {
+        headers: { Authorization: `Bearer ${token}` }
       });
+
       setFormData({
         ...formData,
         startTime: '',

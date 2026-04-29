@@ -1,11 +1,11 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 require('dotenv').config();
 
 const app = express();
@@ -13,34 +13,38 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// Ensure uploads directory exists
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir);
-}
-
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use('/uploads', express.static(uploadDir));
+app.use(express.json({ limit: '10mb' }));
 
-// Multer Setup
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
+// Configure S3 client (used for presigned URLs)
+const s3 = new S3Client({
+    region: process.env.S3_REGION,
+    credentials: {
+        accessKeyId: process.env.S3_ACCESS_KEY,
+        secretAccessKey: process.env.S3_SECRET,
     }
 });
-const upload = multer({ storage: storage });
+
+// Helper to generate presigned PUT URL
+async function generatePresignedPutUrl(key, contentType) {
+    const putCmd = new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET,
+        Key: key,
+        ContentType: contentType,
+        ACL: process.env.S3_PUBLIC === 'true' ? 'public-read' : undefined,
+    });
+    const url = await getSignedUrl(s3, putCmd, { expiresIn: 900 });
+    const publicUrl = process.env.S3_PUBLIC === 'true' ? `https://${process.env.S3_BUCKET}.s3.${process.env.S3_REGION}.amazonaws.com/${key}` : null;
+    return { url, key, publicUrl };
+}
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ojt-tracker')
     .then(() => console.log('MongoDB connected'))
     .catch(() => console.log('MongoDB connection error: Check if MongoDB is running and accessible.'));
 
-// Schemas
+// Schemas (unchanged)
 const userSchema = new mongoose.Schema({
     googleId: { type: String, required: true, unique: true },
     name: String,
@@ -103,6 +107,20 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
 
+// S3 presign endpoint
+app.post('/api/s3-presign', async (req, res) => {
+    const { filename, contentType } = req.body;
+    if (!filename || !contentType) return res.status(400).json({ message: 'filename and contentType required' });
+    try {
+        const key = `uploads/${Date.now()}-${filename}`;
+        const presign = await generatePresignedPutUrl(key, contentType);
+        res.json(presign);
+    } catch (err) {
+        console.error('Presign error', err);
+        res.status(500).json({ message: 'Failed to generate presigned URL' });
+    }
+});
+
 // Records Routes
 app.get('/api/records', verifyToken, async (req, res) => {
     try {
@@ -113,14 +131,20 @@ app.get('/api/records', verifyToken, async (req, res) => {
     }
 });
 
-app.post('/api/records', verifyToken, upload.array('documentaries', 10), async (req, res) => {
+app.post('/api/records', verifyToken, async (req, res) => {
     try {
+        // Expect JSON body with documentaryUrls array (already uploaded to S3)
+        const { documentaryUrls = [] } = req.body;
         const recordData = {
-            ...req.body,
-            userId: req.userId,
-            totalHours: parseFloat(req.body.totalHours),
-            breakDuration: parseInt(req.body.breakDuration),
-            documentaryUrls: req.files ? req.files.map(f => `/uploads/${f.filename}`) : []
+            studentName: req.body.studentName || '',
+            date: req.body.date ? new Date(req.body.date) : new Date(),
+            startTime: req.body.startTime || '',
+            endTime: req.body.endTime || '',
+            breakDuration: parseInt(req.body.breakDuration) || 0,
+            totalHours: parseFloat(req.body.totalHours) || 0,
+            taskDescription: req.body.taskDescription || '',
+            documentaryUrls: documentaryUrls,
+            userId: req.userId
         };
         const record = new Record(recordData);
         const newRecord = await record.save();
@@ -139,6 +163,9 @@ app.delete('/api/records/:id', verifyToken, async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+
+// Basic health check
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
