@@ -20,9 +20,17 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: process.env.FRONTEND_URL || '*',
+    credentials: true
+}));
 app.use(express.json());
 app.use('/uploads', express.static(uploadDir));
+
+// Health Check
+app.get('/', (req, res) => {
+    res.json({ status: 'ok', message: 'OJT Tracker API is running' });
+});
 
 // Multer Setup
 const storage = multer.diskStorage({

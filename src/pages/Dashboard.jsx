@@ -6,8 +6,8 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useNavigate } from 'react-router-dom';
 
-const API_URL = 'http://localhost:5000/api';
-const BASE_URL = 'http://localhost:5000';
+const API_URL = `${import.meta.env.VITE_API_URL}/api`;
+const BASE_URL = import.meta.env.VITE_API_URL;
 
 function Dashboard() {
   const navigate = useNavigate();
