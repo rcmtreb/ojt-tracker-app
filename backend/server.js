@@ -33,15 +33,11 @@ app.get('/', (req, res) => {
 });
 
 // Multer Setup
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
-    }
+const storage = multer.memoryStorage();
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 2 * 1024 * 1024 } // 2MB limit per file
 });
-const upload = multer({ storage: storage });
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ojt-tracker')
@@ -81,7 +77,7 @@ const verifyToken = (req, res, next) => {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.userId = decoded.userId;
         next();
-    } catch (err) {
+    } catch {
         return res.status(401).json({ message: 'Invalid token' });
     }
 };
@@ -121,21 +117,40 @@ app.get('/api/records', verifyToken, async (req, res) => {
     }
 });
 
-app.post('/api/records', verifyToken, upload.array('documentaries', 10), async (req, res) => {
-    try {
-        const recordData = {
-            ...req.body,
-            userId: req.userId,
-            totalHours: parseFloat(req.body.totalHours),
-            breakDuration: parseInt(req.body.breakDuration),
-            documentaryUrls: req.files ? req.files.map(f => `/uploads/${f.filename}`) : []
-        };
-        const record = new Record(recordData);
-        const newRecord = await record.save();
-        res.status(201).json(newRecord);
-    } catch (err) {
-        res.status(400).json({ message: err.message });
-    }
+const uploadMiddleware = upload.array('documentaries', 5);
+
+app.post('/api/records', verifyToken, (req, res) => {
+    uploadMiddleware(req, res, async (err) => {
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ message: 'File too large. Maximum size is 2MB per image.' });
+            }
+            return res.status(400).json({ message: err.message });
+        } else if (err) {
+            return res.status(500).json({ message: err.message });
+        }
+
+        try {
+            const documentaryUrls = req.files ? req.files.map(file => {
+                const base64String = file.buffer.toString('base64');
+                return `data:${file.mimetype};base64,${base64String}`;
+            }) : [];
+
+            const recordData = {
+                ...req.body,
+                userId: req.userId,
+                totalHours: parseFloat(req.body.totalHours),
+                breakDuration: parseInt(req.body.breakDuration),
+                documentaryUrls: documentaryUrls
+            };
+            
+            const record = new Record(recordData);
+            const newRecord = await record.save();
+            res.status(201).json(newRecord);
+        } catch (error) {
+            res.status(400).json({ message: error.message });
+        }
+    });
 });
 
 app.delete('/api/records/:id', verifyToken, async (req, res) => {

@@ -12,7 +12,7 @@ const BASE_URL = import.meta.env.VITE_API_URL;
 function Dashboard() {
   const navigate = useNavigate();
   const [records, setRecords] = useState([]);
-  const [user, setUser] = useState(() => {
+  const [user] = useState(() => {
     const storedUser = localStorage.getItem('user');
     return storedUser ? JSON.parse(storedUser) : null;
   });
@@ -452,11 +452,15 @@ function Dashboard() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Documentary Proof</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Documentary Proof</label>
+                    <span className="text-[9px] font-bold text-blue-500 uppercase tracking-tight">Max 2MB per image</span>
+                  </div>
                   <div className="relative">
                     <input 
                       type="file" 
                       multiple
+                      accept="image/*"
                       ref={fileInputRef}
                       onChange={(e) => setFiles(e.target.files)} 
                       className="hidden" 
@@ -615,7 +619,9 @@ function Dashboard() {
                           {record.documentaryUrls && record.documentaryUrls.length > 0 ? (
                             <button
                               onClick={() => {
-                                setProofImages(record.documentaryUrls.map(u => `${BASE_URL}${u}`));
+                                setProofImages(record.documentaryUrls.map(u => 
+                                  u.startsWith('data:') || u.startsWith('http') ? u : `${BASE_URL}${u}`
+                                ));
                                 setProofStartIndex(0);
                                 setShowProofModal(true);
                               }}
