@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { Clock, ShieldCheck, CheckCircle } from 'lucide-react';
+import { Clock, ShieldCheck, CheckCircle, AlertTriangle } from 'lucide-react';
 
 const API_URL = `${import.meta.env.VITE_API_URL}/api`;
 
@@ -11,8 +11,14 @@ function Login() {
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isInAppBrowser, setIsInAppBrowser] = useState(false);
 
   useEffect(() => {
+    // Detect In-App Browsers (Facebook, Instagram, TikTok, etc.)
+    const ua = navigator.userAgent || navigator.vendor || window.opera;
+    const isAppBrowser = /FBAN|FBAV|Instagram|TikTok|Line|Snapchat|LinkedIn/i.test(ua);
+    setIsInAppBrowser(isAppBrowser);
+
     const token = localStorage.getItem('token');
     if (token) {
       navigate('/dashboard');
@@ -85,6 +91,22 @@ function Login() {
             </div>
             <h1 className="text-3xl font-black text-gray-900 tracking-tight">OJT Tracker</h1>
           </div>
+
+          {isInAppBrowser && (
+            <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500 bg-amber-50 border-2 border-amber-200 rounded-[2rem] p-6 shadow-lg shadow-amber-100/50">
+              <div className="flex gap-4">
+                <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-amber-900 font-black text-sm uppercase tracking-tight mb-1">In-App Browser Detected</h3>
+                  <p className="text-amber-700 text-xs leading-relaxed font-medium">
+                    Google Login may not work inside this app. For a better experience, please tap the <span className="font-black underline">three dots (...)</span> or <span className="font-black underline">Share icon</span> and select <span className="font-black underline">"Open in Browser"</span> (Chrome or Safari).
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white rounded-[2.5rem] shadow-2xl md:shadow-xl p-8 lg:p-10 border border-gray-100">
             <div className="mb-10">
