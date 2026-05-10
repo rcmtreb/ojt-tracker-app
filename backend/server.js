@@ -153,6 +153,46 @@ app.post('/api/records', verifyToken, (req, res) => {
     });
 });
 
+app.put('/api/records/:id', verifyToken, (req, res) => {
+    uploadMiddleware(req, res, async (err) => {
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ message: 'File too large. Maximum size is 2MB per image.' });
+            }
+            return res.status(400).json({ message: err.message });
+        } else if (err) {
+            return res.status(500).json({ message: err.message });
+        }
+
+        try {
+            const updateData = {
+                ...req.body,
+                totalHours: parseFloat(req.body.totalHours),
+                breakDuration: parseInt(req.body.breakDuration)
+            };
+
+            // Only update documentaryUrls if new files were uploaded
+            if (req.files && req.files.length > 0) {
+                updateData.documentaryUrls = req.files.map(file => {
+                    const base64String = file.buffer.toString('base64');
+                    return `data:${file.mimetype};base64,${base64String}`;
+                });
+            }
+
+            const record = await Record.findOneAndUpdate(
+                { _id: req.params.id, userId: req.userId },
+                updateData,
+                { new: true }
+            );
+
+            if (!record) return res.status(404).json({ message: 'Record not found' });
+            res.json(record);
+        } catch (error) {
+            res.status(400).json({ message: error.message });
+        }
+    });
+});
+
 app.delete('/api/records/:id', verifyToken, async (req, res) => {
     try {
         const record = await Record.findOneAndDelete({ _id: req.params.id, userId: req.userId });

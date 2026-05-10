@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
-import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check } from 'lucide-react';
+import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil } from 'lucide-react';
 import ProofGalleryModal from './ProofGalleryModal';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -32,12 +32,42 @@ function Dashboard() {
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const dropdownRef = useRef(null);
   const [viewDate, setViewDate] = useState(new Date());
+  const [editingRecordId, setEditingRecordId] = useState(null);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     navigate('/');
   }, [navigate]);
+
+  const startEdit = (record) => {
+    setEditingRecordId(record._id);
+    setFormData({
+      studentName: record.studentName || '',
+      date: new Date(record.date).toISOString().split('T')[0],
+      startTime: record.startTime || '',
+      endTime: record.endTime || '',
+      breakDuration: record.breakDuration || 0,
+      taskDescription: record.taskDescription || ''
+    });
+    setFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEdit = () => {
+    setEditingRecordId(null);
+    setFormData({
+      studentName: '',
+      date: new Date().toISOString().split('T')[0],
+      startTime: '',
+      endTime: '',
+      breakDuration: 0,
+      taskDescription: ''
+    });
+    setFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const fetchRecords = useCallback(async (token) => {
     try {
@@ -107,12 +137,22 @@ function Dashboard() {
     }
 
     try {
-      await axios.post(`${API_URL}/records`, data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`
-        }
-      });
+      if (editingRecordId) {
+        await axios.put(`${API_URL}/records/${editingRecordId}`, data, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Authorization: `Bearer ${token}`
+          }
+        });
+      } else {
+        await axios.post(`${API_URL}/records`, data, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Authorization: `Bearer ${token}`
+          }
+        });
+      }
+      
       setFormData({
         ...formData,
         startTime: '',
@@ -121,6 +161,7 @@ function Dashboard() {
         taskDescription: ''
       });
       setFiles([]);
+      setEditingRecordId(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       setShowModal(false);
       fetchRecords(token);
@@ -353,7 +394,7 @@ function Dashboard() {
                   ></div>
                 </div>
                 <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                  <span>0 HRS</span>
+                  <span>{totalAccumulatedHours.toFixed(1)} HRS</span>
                   <div className="flex items-center gap-2">
                     {editingTarget ? (
                       <form onSubmit={handleTargetSubmit} className="flex items-center gap-2" aria-label="Edit target hours">
@@ -417,10 +458,10 @@ function Dashboard() {
           <div className="lg:col-span-8 order-2 lg:order-1 space-y-6">
             <section className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-8">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                  <PlusCircle className="w-5 h-5 text-blue-600" />
+                <div className={`w-10 h-10 ${editingRecordId ? 'bg-amber-50' : 'bg-blue-50'} rounded-xl flex items-center justify-center`}>
+                  {editingRecordId ? <Pencil className="w-5 h-5 text-amber-600" /> : <PlusCircle className="w-5 h-5 text-blue-600" />}
                 </div>
-                <h2 className="text-xl font-bold text-gray-900">New Log Entry</h2>
+                <h2 className="text-xl font-bold text-gray-900">{editingRecordId ? 'Edit Log Entry' : 'New Log Entry'}</h2>
               </div>
               
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -481,9 +522,20 @@ function Dashboard() {
                   <textarea name="taskDescription" value={formData.taskDescription} onChange={handleChange} rows="3" className="w-full rounded-xl border-gray-200 shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 p-3 border transition-all font-medium resize-none" placeholder="What did you work on today?"></textarea>
                 </div>
 
-                <button type="submit" className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                  Review & Save Record <ChevronRight className="w-4 h-4" />
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button type="submit" className={`flex-1 ${editingRecordId ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-100' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100'} text-white font-black py-4 rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg`}>
+                    {editingRecordId ? 'Review & Update Record' : 'Review & Save Record'} <ChevronRight className="w-4 h-4" />
+                  </button>
+                  {editingRecordId && (
+                    <button 
+                      type="button" 
+                      onClick={cancelEdit}
+                      className="px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest text-gray-500 border-2 border-gray-100 hover:bg-gray-50 transition active:scale-95"
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+                </div>
               </form>
             </section>
           </div>
@@ -635,12 +687,22 @@ function Dashboard() {
                           )}
                         </td>
                         <td className="px-8 py-5 whitespace-nowrap text-right">
-                          <button 
-                              onClick={() => deleteRecord(record._id)} 
-                              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-80"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
+                          <div className="flex justify-end gap-2">
+                            <button 
+                                onClick={() => startEdit(record)} 
+                                className="p-2 text-gray-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-all opacity-80"
+                                title="Edit record"
+                            >
+                              <Pencil className="w-5 h-5" />
+                            </button>
+                            <button 
+                                onClick={() => deleteRecord(record._id)} 
+                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-80"
+                                title="Delete record"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
