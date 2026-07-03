@@ -10,7 +10,9 @@ const GOOGLE_CLIENT_ID = "1021240931407-d22o1pbm1c10jpsor4qc2irfmu66fmel.apps.go
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
-  if (!token) {
+  const user = localStorage.getItem('user');
+  const hasUser = user && user !== 'null' && user !== 'undefined';
+  if (!token || !hasUser) {
     return <Navigate to="/" replace />;
   }
   return children;
