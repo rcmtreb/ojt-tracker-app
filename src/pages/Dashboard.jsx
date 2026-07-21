@@ -98,6 +98,53 @@ function Dashboard() {
     return endMins - startMins;
   };
 
+  const formatDTRSessions = (startTimeStr, endTimeStr) => {
+    if (!startTimeStr || !endTimeStr) {
+      return { amIn: '--:--', amOut: '--:--', pmIn: '--:--', pmOut: '--:--' };
+    }
+
+    const startMins = parseTimeToMinutes(startTimeStr);
+    const endMins = parseTimeToMinutes(endTimeStr);
+
+    const format12H = (mins) => {
+      const h24 = Math.floor(mins / 60) % 24;
+      const m = mins % 60;
+      const period = h24 >= 12 ? 'PM' : 'AM';
+      const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+      return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+    };
+
+    const noonMins = 12 * 60; // 12:00 PM
+
+    // Morning Half Day (ends at or before 12:00 PM)
+    if (endMins <= noonMins && startMins < noonMins) {
+      return {
+        amIn: format12H(startMins),
+        amOut: format12H(endMins),
+        pmIn: '--:--',
+        pmOut: '--:--'
+      };
+    }
+
+    // Afternoon Half Day (starts at or after 12:00 PM)
+    if (startMins >= noonMins) {
+      return {
+        amIn: '--:--',
+        amOut: '--:--',
+        pmIn: format12H(startMins),
+        pmOut: format12H(endMins)
+      };
+    }
+
+    // Continuous Full Day Shift: Morning TIME IN is startMins, Afternoon TIME OUT is endMins
+    return {
+      amIn: format12H(startMins),
+      amOut: '--:--',
+      pmIn: '--:--',
+      pmOut: format12H(endMins)
+    };
+  };
+
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -431,43 +478,196 @@ function Dashboard() {
   const exportToPDF = () => {
     try {
       const doc = new jsPDF();
-      doc.setFontSize(20);
-      doc.setTextColor(30, 64, 175);
-      doc.text('OJT Daily Time Record', 14, 20);
       
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 28);
+      // Sort records chronologically (oldest date at top, latest at bottom)
+      const sortedRecords = [...records].sort((a, b) => new Date(a.date) - new Date(b.date));
       
-      doc.setDrawColor(229, 231, 235);
-      doc.line(14, 32, 196, 32);
+      const studentNameStr = formData.studentName || user?.name || 'Student Trainee';
+      const studentEmailStr = user?.email || 'N/A';
+      
+      // Calculate Date Range
+      const startDateStr = sortedRecords.length > 0
+        ? new Date(sortedRecords[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : 'N/A';
+      const endDateStr = sortedRecords.length > 0
+        ? new Date(sortedRecords[sortedRecords.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : 'N/A';
 
-      doc.setFontSize(12);
-      doc.setTextColor(0);
-      doc.text(`Student Name: ${formData.studentName || user?.name || 'N/A'}`, 14, 42);
-      doc.text(`Total Accumulated Hours: ${totalAccumulatedHours.toFixed(2)} hrs`, 14, 50);
+      // 1. Header Banner (Emerald Accent: #059669)
+      doc.setFillColor(5, 150, 105);
+      doc.rect(0, 0, 210, 13, 'F');
+      
+      doc.setFontSize(10.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.text('DAILY TIME RECORD', 14, 9);
 
-      const tableColumn = ["Date", "Start Time", "End Time", "Break (min)", "Total Hours", "Task Description"];
-      const tableRows = records.map(record => [
-        new Date(record.date).toLocaleDateString(),
-        record.startTime || 'N/A',
-        record.endTime || 'N/A',
-        record.breakDuration || 0,
-        (record.totalHours || 0).toFixed(2),
-        record.taskDescription || 'No description'
-      ]);
+      // 2. Compact 2-Column Student Info & Summary Card Box
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(14, 16, 182, 18, 2, 2, 'FD');
+
+      // Row 1: Student & Accumulated Hours
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 116, 139);
+      doc.text('STUDENT:', 18, 23);
+
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(studentNameStr, 34, 23);
+
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      const studentWidth = doc.getTextWidth(studentNameStr);
+      doc.text(`(${studentEmailStr})`, 36 + studentWidth, 23);
+
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 116, 139);
+      doc.text('TOTAL WORKED:', 122, 23);
+
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(5, 150, 105);
+      doc.text(`${totalAccumulatedHours.toFixed(2)} / ${targetHours} HRS`, 148, 23);
+
+      // Row 2: Period & Status
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 116, 139);
+      doc.text('PERIOD:', 18, 29.5);
+
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${startDateStr} - ${endDateStr}`, 34, 29.5);
+
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 116, 139);
+      doc.text('PROGRESS:', 122, 29.5);
+
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(isTargetExceeded ? 5 : 15, isTargetExceeded ? 150 : 23, isTargetExceeded ? 105 : 42);
+      doc.text(`${rawProgressPercent.toFixed(0)}% (${isTargetExceeded ? 'COMPLETED' : 'IN PROGRESS'})`, 148, 29.5);
+
+      // 3. Table Headers and Rows (Official DATE | DAY | TIME IN | TIME OUT Format)
+      const tableColumn = [
+        "DATE", 
+        "DAY", 
+        "TIME IN", 
+        "TIME OUT", 
+        "TIME IN", 
+        "TIME OUT", 
+        "Daily Hours"
+      ];
+      const tableRows = sortedRecords.map(record => {
+        const d = new Date(record.date);
+        const formattedDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const dayOfWeek = d.toLocaleDateString('en-US', { weekday: 'short' });
+        const sessions = formatDTRSessions(record.startTime, record.endTime);
+
+        return [
+          formattedDate,
+          dayOfWeek,
+          sessions.amIn,
+          sessions.amOut,
+          sessions.pmIn,
+          sessions.pmOut,
+          `${(record.totalHours || 0).toFixed(2)} hrs`
+        ];
+      });
 
       autoTable(doc, {
         head: [tableColumn],
         body: tableRows,
-        startY: 58,
-        theme: 'striped',
-        headStyles: { fillStyle: 'fill', fillColor: [37, 99, 235], textColor: [255, 255, 255] },
-        alternateRowStyles: { fillColor: [249, 250, 251] },
-        margin: { top: 60 },
+        startY: 37,
+        theme: 'grid',
+        headStyles: { 
+          fillColor: [5, 150, 105], 
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 8.5,
+          halign: 'center',
+          valign: 'middle'
+        },
+        alternateRowStyles: { 
+          fillColor: [240, 253, 244]
+        },
+        bodyStyles: {
+          fontSize: 8,
+          textColor: [51, 65, 85],
+          halign: 'center',
+          valign: 'middle'
+        },
+        columnStyles: {
+          0: { cellWidth: 28, fontStyle: 'bold' },
+          1: { cellWidth: 16, fontStyle: 'bold', textColor: [100, 116, 139] },
+          2: { cellWidth: 27 },
+          3: { cellWidth: 27 },
+          4: { cellWidth: 27 },
+          5: { cellWidth: 27 },
+          6: { cellWidth: 30, fontStyle: 'bold', textColor: [5, 150, 105] }
+        },
+        margin: { top: 37, bottom: 38 }
       });
 
-      doc.save(`OJT_Report_${user?.name.replace(/\s+/g, '_')}.pdf`);
+      // 4. Signatures & Certification Block at bottom of last page
+      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : 190;
+      
+      let sigY = finalY;
+      if (sigY > 245) {
+        doc.addPage();
+        sigY = 25;
+      }
+
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(100, 116, 139);
+      doc.text('I hereby certify on my honor that the above is a true and correct record of the duty hours worked and tasks accomplished.', 14, sigY);
+
+      // Signature Lines
+      const lineY = sigY + 16;
+      
+      // Student Signature
+      doc.setDrawColor(148, 163, 184);
+      doc.line(14, lineY, 68, lineY);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(studentNameStr, 14, lineY + 4.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Student Trainee', 14, lineY + 8);
+
+      // OJT Supervisor Signature
+      doc.line(78, lineY, 132, lineY);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text('OJT Industry Supervisor', 78, lineY + 4.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Signature over Printed Name', 78, lineY + 8);
+
+      // Academic Coordinator Signature
+      doc.line(142, lineY, 196, lineY);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text('Academic Coordinator', 142, lineY + 4.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Signature over Printed Name', 142, lineY + 8);
+
+      doc.save(`OJT_DTR_Report_${studentNameStr.replace(/\s+/g, '_')}.pdf`);
     } catch (error) {
       console.error('PDF Export Error:', error);
       alert('Failed to generate PDF. Check console for details.');
@@ -1088,6 +1288,11 @@ function Dashboard() {
         </div>
 
         <ProofGalleryModal visible={showProofModal} images={proofImages} startIndex={proofStartIndex} onClose={() => setShowProofModal(false)} />
+        
+        {/* Footer */}
+        <footer className="mt-12 pt-6 border-t border-slate-200/60 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
+          <p>© 2026 OJT Tracker System • Developed by <span className="font-bold text-slate-700 dark:text-slate-200">Alberto Rili</span></p>
+        </footer>
       </main>
 
       {/* Review Modal */}

@@ -101,7 +101,7 @@ function Terms() {
       </div>
 
       <p className="mt-8 text-center text-slate-500 text-xs relative z-10">
-        © 2026 OJT Tracker System. All rights reserved.
+        © 2026 OJT Tracker System • Developed by <span className="font-bold text-slate-300">Alberto Rili</span>
       </p>
     </div>
   );

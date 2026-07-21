@@ -229,7 +229,7 @@ function Login() {
           </div>
           
           <p className="mt-8 text-center text-slate-500 text-xs">
-            © 2026 OJT Tracker System. All rights reserved.
+            © 2026 OJT Tracker System • Developed by <span className="font-bold text-slate-700 dark:text-slate-300">Alberto Rili</span>
           </p>
         </div>
       </div>
