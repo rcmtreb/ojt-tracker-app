@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
-import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon } from 'lucide-react';
+import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand } from 'lucide-react';
 import ProofGalleryModal from './ProofGalleryModal';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -45,6 +45,58 @@ function Dashboard() {
   const dropdownRef = useRef(null);
   const [viewDate, setViewDate] = useState(new Date());
   const [editingRecordId, setEditingRecordId] = useState(null);
+  const [formError, setFormError] = useState('');
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const recordsPerPage = 5;
+
+  const totalPages = Math.ceil(records.length / recordsPerPage) || 1;
+  const validCurrentPage = Math.min(currentPage, totalPages);
+  
+  const indexOfLastRecord = validCurrentPage * recordsPerPage;
+  const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
+  const paginatedRecords = records.slice(indexOfFirstRecord, indexOfLastRecord);
+
+  const goToPrevPage = () => {
+    setCurrentPage(prev => Math.max(1, prev - 1));
+  };
+
+  const goToNextPage = () => {
+    setCurrentPage(prev => Math.min(totalPages, prev + 1));
+  };
+
+  const duplicateNotice = (() => {
+    if (!formData.date) return '';
+    const exists = records.some(rec => {
+      if (editingRecordId && rec._id === editingRecordId) return false;
+      const recDate = new Date(rec.date).toISOString().split('T')[0];
+      return recDate === formData.date;
+    });
+    return exists ? 'Notice: A log entry already exists for this date.' : '';
+  })();
+
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const isOvernightShift = (() => {
+    if (!formData.startTime || !formData.endTime) return false;
+    const startMins = parseTimeToMinutes(formData.startTime);
+    const endMins = parseTimeToMinutes(formData.endTime);
+    return endMins < startMins;
+  })();
+
+  const calculateShiftMinutes = (startTime, endTime) => {
+    if (!startTime || !endTime) return 0;
+    const startMins = parseTimeToMinutes(startTime);
+    const endMins = parseTimeToMinutes(endTime);
+    if (endMins < startMins) {
+      return (1440 - startMins) + endMins;
+    }
+    return endMins - startMins;
+  };
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -141,21 +193,73 @@ function Dashboard() {
   }, [navigate, fetchRecords, user]);
 
   const handleChange = (e) => {
+    setFormError('');
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const calculateTotalHours = () => {
-    if (!formData.startTime || !formData.endTime) return 0;
-    const start = new Date(`2000-01-01T${formData.startTime}`);
-    const end = new Date(`2000-01-01T${formData.endTime}`);
-    let diff = (end - start) / (1000 * 60 * 60);
-    diff -= formData.breakDuration / 60;
-    return Math.max(0, diff).toFixed(2);
+  const handleFileChange = (e) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    setFormError('');
+    
+    for (const file of selectedFiles) {
+      if (file.size > 2 * 1024 * 1024) {
+        setFormError(`File "${file.name}" exceeds the 2MB size limit.`);
+        setFiles([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      if (!file.type.startsWith('image/')) {
+        setFormError(`File "${file.name}" is not a supported image format.`);
+        setFiles([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+    }
+    setFiles(selectedFiles);
   };
+
+
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    setPendingTotalHours(calculateTotalHours());
+    setFormError('');
+
+    // Date validation
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (formData.date > todayStr) {
+      setFormError('Selected duty date cannot be in the future.');
+      return;
+    }
+
+    // Time validation
+    if (!formData.startTime || !formData.endTime) {
+      setFormError('Please select both Start Time and End Time.');
+      return;
+    }
+
+    const startMins = parseTimeToMinutes(formData.startTime);
+    const endMins = parseTimeToMinutes(formData.endTime);
+
+    if (startMins === endMins) {
+      setFormError('Start time and end time cannot be identical.');
+      return;
+    }
+
+    const shiftDurationMins = calculateShiftMinutes(formData.startTime, formData.endTime);
+    const breakMins = parseFloat(formData.breakDuration) || 0;
+
+    if (breakMins >= shiftDurationMins) {
+      setFormError('Break duration cannot meet or exceed total shift duration.');
+      return;
+    }
+
+    const computed = ((shiftDurationMins - breakMins) / 60).toFixed(2);
+    if (parseFloat(computed) <= 0) {
+      setFormError('Computed duty hours must be greater than 0.');
+      return;
+    }
+
+    setPendingTotalHours(computed);
     setShowModal(true);
   };
 
@@ -229,6 +333,22 @@ function Dashboard() {
     return stored ? parseFloat(stored) : 600;
   });
 
+  const rawProgressPercent = targetHours > 0 ? (totalAccumulatedHours / targetHours) * 100 : 0;
+  const visualProgressPercent = Math.min(100, rawProgressPercent);
+  const isTargetExceeded = totalAccumulatedHours >= targetHours;
+  const bonusOvertimeHours = Math.max(0, totalAccumulatedHours - targetHours);
+  const remainingHours = Math.max(0, targetHours - totalAccumulatedHours);
+
+  const getTraineeRank = (percent) => {
+    if (percent >= 100) return { title: 'Overachieving Master', icon: Crown, iconColor: 'text-amber-500', badgeBg: 'bg-gradient-to-r from-amber-500/20 to-emerald-500/20 border-amber-500/30 text-amber-600 dark:text-amber-300' };
+    if (percent >= 75) return { title: 'OJT Specialist', icon: Trophy, iconColor: 'text-emerald-500', badgeBg: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-300' };
+    if (percent >= 25) return { title: 'Dedicated Apprentice', icon: Medal, iconColor: 'text-teal-500', badgeBg: 'bg-teal-500/15 border-teal-500/30 text-teal-700 dark:text-teal-300' };
+    return { title: 'Rookie Trainee', icon: Award, iconColor: 'text-slate-400 dark:text-slate-500', badgeBg: 'bg-slate-200/50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300' };
+  };
+
+  const traineeRank = getTraineeRank(rawProgressPercent);
+  const RankIcon = traineeRank.icon;
+
   const [editingTarget, setEditingTarget] = useState(false);
   const [targetInput, setTargetInput] = useState(String(targetHours));
   const [targetSaved, setTargetSaved] = useState(false);
@@ -287,9 +407,6 @@ function Dashboard() {
     e.preventDefault();
     saveTarget();
   };
-
-  const progressPercent = Math.min(100, (totalAccumulatedHours / targetHours) * 100);
-  const remainingHours = Math.max(0, targetHours - totalAccumulatedHours);
 
   const [showProofModal, setShowProofModal] = useState(false);
   const [proofImages, setProofImages] = useState([]);
@@ -363,18 +480,18 @@ function Dashboard() {
     <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 font-sans pb-16 relative overflow-hidden transition-colors duration-300">
       
       {/* Decorative ambient background glows */}
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute top-[60vh] left-0 w-[400px] h-[400px] bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute top-[60vh] left-0 w-[400px] h-[400px] bg-teal-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
       {/* Navigation */}
       <nav className="glass-panel dark:glass-panel-dark border-b border-slate-200/50 dark:border-slate-800 sticky top-0 z-30 shadow-sm shadow-slate-100/40 dark:shadow-none transition-all">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-500/20">
+              <div className="w-9 h-9 bg-gradient-to-tr from-emerald-600 to-teal-600 rounded-xl flex items-center justify-center shadow-md shadow-emerald-500/20">
                 <Clock className="w-5 h-5 text-white" />
               </div>
-              <span className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">OJT<span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Tracker</span></span>
+              <span className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">OJT<span className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">Tracker</span></span>
             </div>
             
             <div className="flex items-center gap-4">
@@ -388,9 +505,9 @@ function Dashboard() {
                   className="focus:outline-none block transition-transform active:scale-95 cursor-pointer"
                 >
                   {user.picture ? (
-                    <img src={user.picture} alt="Profile" className="w-9 h-9 rounded-full ring-2 ring-slate-100 dark:ring-slate-800 hover:ring-blue-100 transition-all object-cover" />
+                    <img src={user.picture} alt="Profile" className="w-9 h-9 rounded-full ring-2 ring-slate-100 dark:ring-slate-800 hover:ring-emerald-100 transition-all object-cover" />
                   ) : (
-                    <div className="w-9 h-9 rounded-full bg-blue-50 border border-blue-100 dark:bg-slate-800 dark:border-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition-all">
+                    <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-100 dark:bg-slate-800 dark:border-slate-700 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 transition-all">
                       <UserIcon className="w-5 h-5" />
                     </div>
                   )}
@@ -413,7 +530,7 @@ function Dashboard() {
                           {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-500" />}
                           <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
                         </div>
-                        <div className={`w-8 h-4.5 rounded-full p-0.5 transition-colors duration-200 ${theme === 'dark' ? 'bg-blue-650 bg-blue-600' : 'bg-slate-200 dark:bg-slate-800'}`}>
+                        <div className={`w-8 h-4.5 rounded-full p-0.5 transition-colors duration-200 ${theme === 'dark' ? 'bg-emerald-600' : 'bg-slate-200 dark:bg-slate-800'}`}>
                           <div className={`w-3.5 h-3.5 rounded-full bg-white transition-transform duration-200 ${theme === 'dark' ? 'translate-x-3.5' : 'translate-x-0'}`}></div>
                         </div>
                       </button>
@@ -439,30 +556,69 @@ function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
           
           {/* Progress Card */}
-          <div className="lg:col-span-8 bg-white dark:bg-slate-900/60 rounded-[2rem] p-6 sm:p-8 border border-slate-100 dark:border-slate-805 dark:border-slate-800/70 shadow-sm relative overflow-hidden group transition-colors">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-50/50 dark:bg-blue-900/5 rounded-full -mr-32 -mt-32 transition-transform duration-700 group-hover:scale-105"></div>
+          <div className={`lg:col-span-8 bg-white dark:bg-slate-900/60 rounded-[2rem] p-6 sm:p-8 border ${isTargetExceeded ? 'border-amber-300/60 dark:border-amber-500/30' : 'border-slate-100 dark:border-slate-800/70'} shadow-sm relative overflow-hidden group transition-colors`}>
+            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50/50 dark:bg-emerald-900/5 rounded-full -mr-32 -mt-32 transition-transform duration-700 group-hover:scale-105"></div>
             
             <div className="relative z-10">
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white mb-2 tracking-tight">Hello, {user?.name ? user.name.split(' ')[0] : 'Student'}! 👋</h2>
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">You've completed <span className="text-blue-600 dark:text-blue-400 font-extrabold">{totalAccumulatedHours.toFixed(1)} hours</span> of your training. Keep going!</p>
+              {/* Celebration Banner when Target Exceeded */}
+              {isTargetExceeded && (
+                <div className="mb-4 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-teal-500/10 border border-amber-500/30 dark:border-amber-500/20 rounded-2xl p-4 flex items-center justify-between shadow-sm animate-fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center text-amber-500">
+                      <PartyPopper className="w-5 h-5 animate-bounce" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400">Requirements Fulfilled!</span>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                        Congratulations! You've logged <span className="font-bold text-amber-600 dark:text-amber-400">{bonusOvertimeHours.toFixed(1)} bonus hours</span> beyond your {targetHours} hrs requirement.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-3 mb-2">
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                  Hello, {user?.name ? user.name.split(' ')[0] : 'Student'}! 
+                  <Hand className="w-6 h-6 text-amber-400 animate-pulse" />
+                </h2>
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${traineeRank.badgeBg} backdrop-blur-md shadow-sm`}>
+                  <RankIcon className={`w-3.5 h-3.5 ${traineeRank.iconColor}`} />
+                  <span>{traineeRank.title}</span>
+                </span>
+              </div>
+              
+              <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">You've completed <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">{totalAccumulatedHours.toFixed(1)} hours</span> of your training. Keep going!</p>
               
               <div className="space-y-4">
                 <div className="flex justify-between items-end">
-                  <span className="text-[10px] font-extrabold text-blue-600 dark:text-blue-450 uppercase tracking-widest">Training Completion Progress</span>
-                  <span className="text-sm font-extrabold text-slate-900 dark:text-blue-100 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-0.5 rounded-full">{progressPercent.toFixed(0)}%</span>
+                  <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Training Completion Progress</span>
+                  <span className={`text-sm font-extrabold px-3 py-0.5 rounded-full ${isTargetExceeded ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800' : 'text-slate-900 dark:text-emerald-100 bg-emerald-50 dark:bg-emerald-900/30'}`}>
+                    {rawProgressPercent.toFixed(0)}%
+                  </span>
                 </div>
                 
                 <div className="w-full bg-slate-100/70 dark:bg-slate-800 rounded-full h-4 overflow-hidden p-1 border border-slate-200/30 dark:border-slate-700/20">
                   <div 
-                    className="bg-gradient-to-r from-blue-600 to-indigo-600 h-2 rounded-full transition-all duration-1000 ease-out shadow-sm shadow-blue-300" 
-                    style={{ width: `${progressPercent}%` }}
+                    className={`h-2 rounded-full transition-all duration-1000 ease-out shadow-sm ${isTargetExceeded ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-amber-400 shadow-amber-300' : 'bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-300'}`} 
+                    style={{ width: `${visualProgressPercent}%` }}
                   ></div>
                 </div>
                 
                 <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest pt-1">
                   <div className="flex flex-wrap gap-2">
                     <span className="bg-slate-50 dark:bg-slate-950 px-2 py-1 rounded-md text-slate-500 dark:text-slate-450 font-extrabold">{totalAccumulatedHours.toFixed(1)} HRS LOGGED</span>
-                    <span className="bg-blue-50/50 dark:bg-blue-950/25 px-2 py-1 rounded-md text-blue-600 dark:text-blue-400 font-extrabold">{remainingHours.toFixed(1)} HRS REMAINING</span>
+                    {isTargetExceeded ? (
+                      <span className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 px-2 py-1 rounded-md text-amber-600 dark:text-amber-400 font-extrabold flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-500" />
+                        +{bonusOvertimeHours.toFixed(1)} HRS OVERTIME BONUS
+                      </span>
+                    ) : (
+                      <span className="bg-emerald-50/50 dark:bg-emerald-950/25 px-2 py-1 rounded-md text-emerald-600 dark:text-emerald-400 font-extrabold">{remainingHours.toFixed(1)} HRS REMAINING</span>
+                    )}
                   </div>
                   
                   <div className="flex items-center gap-2">
@@ -478,16 +634,16 @@ function Dashboard() {
                           value={targetInput}
                           onChange={(e) => setTargetInput(e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); cancelEditTarget(); } }}
-                          className="w-20 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white p-1.5 text-center text-xs font-bold focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none"
+                          className="w-20 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white p-1.5 text-center text-xs font-bold focus:ring-2 focus:ring-emerald-100 focus:border-emerald-400 outline-none"
                           aria-label="Target hours input"
                         />
-                        <button type="submit" className="text-[9px] font-extrabold text-white bg-blue-600 px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-blue-700">Save</button>
+                        <button type="submit" className="text-[9px] font-extrabold text-white bg-emerald-600 px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-emerald-700">Save</button>
                         <button type="button" onClick={cancelEditTarget} className="text-[9px] font-extrabold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700">Cancel</button>
                       </form>
                     ) : (
                       <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 px-2 py-1 rounded-md">
                         <span className="text-slate-500 dark:text-slate-450 font-extrabold">TARGET: {targetHours} HRS</span>
-                        <button ref={editButtonRef} onClick={startEditTarget} className="text-blue-600 dark:text-blue-450 hover:text-blue-700 hover:underline font-extrabold cursor-pointer">Edit</button>
+                        <button ref={editButtonRef} onClick={startEditTarget} className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:underline font-extrabold cursor-pointer">Edit</button>
                         {targetSaved && (
                           <span className="ml-1 inline-flex items-center text-green-600">
                             <Check className="w-3.5 h-3.5" />
@@ -505,13 +661,13 @@ function Dashboard() {
           <div className="lg:col-span-4 flex flex-col sm:flex-row lg:flex-col gap-4">
             
             {/* Widget 1 */}
-            <div className="flex-1 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2rem] p-6 text-white shadow-lg shadow-blue-500/10 flex flex-col justify-between relative overflow-hidden group">
+            <div className="flex-1 bg-gradient-to-br from-emerald-600 to-teal-700 rounded-[2rem] p-6 text-white shadow-lg shadow-emerald-500/10 flex flex-col justify-between relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-10 -mt-10"></div>
               <div className="w-9 h-9 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center mb-4 border border-white/10">
                 <Calendar className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-blue-200 text-[10px] font-extrabold uppercase tracking-widest mb-0.5">Current Date</p>
+                <p className="text-emerald-100 text-[10px] font-extrabold uppercase tracking-widest mb-0.5">Current Date</p>
                 <h3 className="text-lg font-bold tracking-tight">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</h3>
               </div>
             </div>
@@ -541,11 +697,27 @@ function Dashboard() {
               )}
               
               <div className="flex items-center gap-3 mb-6">
-                <div className={`w-9 h-9 ${editingRecordId ? 'bg-amber-50 border-amber-100 dark:bg-amber-950/20 dark:border-amber-900 text-amber-600' : 'bg-blue-50 border-blue-100 dark:bg-blue-950/20 dark:border-blue-900 text-blue-600'} border rounded-xl flex items-center justify-center`}>
+                <div className={`w-9 h-9 ${editingRecordId ? 'bg-amber-50 border-amber-100 dark:bg-amber-950/20 dark:border-amber-900 text-amber-600' : 'bg-emerald-50 border-emerald-100 dark:bg-emerald-950/20 dark:border-emerald-900 text-emerald-600'} border rounded-xl flex items-center justify-center`}>
                   {editingRecordId ? <Pencil className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
                 </div>
                 <h2 className="text-lg font-extrabold text-slate-800 dark:text-white tracking-tight">{editingRecordId ? 'Edit Log Entry' : 'Create New Log Entry'}</h2>
               </div>
+              
+              {/* Inline Form Validation Error Banner */}
+              {formError && (
+                <div className="mb-5 p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-500/20 flex items-center gap-3 text-red-650 dark:text-red-300 text-xs font-bold animate-fade-in">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-500" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              {/* Duplicate Date Notice */}
+              {duplicateNotice && !formError && (
+                <div className="mb-5 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-500/20 flex items-center gap-3 text-amber-700 dark:text-amber-300 text-xs font-semibold animate-fade-in">
+                  <AlertTriangle className="w-4.5 h-4.5 flex-shrink-0 text-amber-500" />
+                  <span>{duplicateNotice}</span>
+                </div>
+              )}
               
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-1.5">
@@ -556,7 +728,7 @@ function Dashboard() {
                     value={formData.studentName} 
                     onChange={handleChange} 
                     placeholder={user.name} 
-                    className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 p-3.5 border transition-all placeholder:text-slate-300 dark:placeholder:text-slate-700 text-sm font-medium outline-none" 
+                    className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 p-3.5 border transition-all placeholder:text-slate-300 dark:placeholder:text-slate-700 text-sm font-medium outline-none" 
                   />
                 </div>
                 
@@ -566,10 +738,11 @@ function Dashboard() {
                     <input 
                       type="date" 
                       name="date" 
+                      max={new Date().toISOString().split('T')[0]}
                       value={formData.date} 
                       onChange={handleChange} 
                       required 
-                      className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 p-3.5 border transition-all text-sm font-medium outline-none" 
+                      className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 p-3.5 border transition-all text-sm font-medium outline-none" 
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -577,9 +750,10 @@ function Dashboard() {
                     <input 
                       type="number" 
                       name="breakDuration" 
+                      min="0"
                       value={formData.breakDuration} 
                       onChange={handleChange} 
-                      className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 p-3.5 border transition-all text-sm font-medium outline-none" 
+                      className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 p-3.5 border transition-all text-sm font-medium outline-none" 
                     />
                   </div>
                 </div>
@@ -593,7 +767,7 @@ function Dashboard() {
                       value={formData.startTime} 
                       onChange={handleChange} 
                       required 
-                      className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 p-3.5 border transition-all text-sm font-medium outline-none" 
+                      className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 p-3.5 border transition-all text-sm font-medium outline-none" 
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -604,9 +778,16 @@ function Dashboard() {
                       value={formData.endTime} 
                       onChange={handleChange} 
                       required 
-                      className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 p-3.5 border transition-all text-sm font-medium outline-none" 
+                      className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 p-3.5 border transition-all text-sm font-medium outline-none" 
                     />
                   </div>
+
+                  {isOvernightShift && (
+                    <div className="sm:col-span-2 p-3 rounded-2xl bg-teal-50/80 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-900/50 flex items-center gap-2.5 text-teal-700 dark:text-teal-300 text-xs font-semibold animate-fade-in">
+                      <Moon className="w-4 h-4 text-teal-500 flex-shrink-0 animate-pulse" />
+                      <span>Overnight Duty Shift Detected (crosses midnight into next day). Shift total will be calculated accurately.</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -621,15 +802,15 @@ function Dashboard() {
                       multiple
                       accept="image/*"
                       ref={fileInputRef}
-                      onChange={(e) => setFiles(e.target.files)} 
+                      onChange={handleFileChange} 
                       className="hidden" 
                       id="file-upload"
                     />
                     <label 
                       htmlFor="file-upload"
-                      className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/20 dark:hover:bg-blue-950/10 transition-all cursor-pointer text-sm text-slate-500 dark:text-slate-400 font-medium group"
+                      className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/10 transition-all cursor-pointer text-sm text-slate-500 dark:text-slate-400 font-medium group"
                     >
-                      <UploadCloud className="w-8 h-8 text-slate-400 group-hover:text-blue-500 transition-colors" />
+                      <UploadCloud className="w-8 h-8 text-slate-400 group-hover:text-emerald-500 transition-colors" />
                       <div className="text-center">
                         <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
                           {files.length > 0 ? `${files.length} Files Selected` : 'Click to select and upload images'}
@@ -647,7 +828,7 @@ function Dashboard() {
                     value={formData.taskDescription} 
                     onChange={handleChange} 
                     rows="3" 
-                    className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 p-3.5 border transition-all text-sm font-medium resize-none outline-none" 
+                    className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 p-3.5 border transition-all text-sm font-medium resize-none outline-none" 
                     placeholder="Write a brief summary of the tasks completed today..."
                   ></textarea>
                 </div>
@@ -655,10 +836,10 @@ function Dashboard() {
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                   <button 
                     type="submit" 
-                    className={`flex-1 cursor-pointer py-4 rounded-2xl font-extrabold text-xs uppercase tracking-widest text-white transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 hover:shadow-xl
+                    className={`flex-1 cursor-pointer py-4 rounded-2xl font-extrabold text-xs uppercase tracking-widest text-white transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 hover:shadow-xl
                       ${editingRecordId 
                         ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 shadow-amber-500/10' 
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-600/10'}
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-600/10'}
                     `}
                   >
                     {editingRecordId ? 'Review & Update Record' : 'Review & Save Record'} 
@@ -684,8 +865,8 @@ function Dashboard() {
               <div>
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 rounded-xl flex items-center justify-center">
-                      <Calendar className="w-4.5 h-4.5 text-blue-600 dark:text-blue-400" />
+                    <div className="w-9 h-9 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 rounded-xl flex items-center justify-center">
+                      <Calendar className="w-4.5 h-4.5 text-emerald-600 dark:text-emerald-400" />
                     </div>
                     <h2 className="text-md font-extrabold text-slate-800 dark:text-white tracking-tight">Calendar</h2>
                   </div>
@@ -729,9 +910,9 @@ function Dashboard() {
                         key={day} 
                         className={`aspect-square flex items-center justify-center text-xs font-bold rounded-xl transition-all relative group cursor-default
                           ${logged 
-                            ? 'bg-blue-600 text-white shadow-md shadow-blue-200' 
+                            ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/20' 
                             : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-850 border border-transparent'}
-                          ${isToday && !logged ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-400' : ''}
+                          ${isToday && !logged ? 'border-emerald-600 dark:border-emerald-500 text-emerald-600 dark:text-emerald-400' : ''}
                         `}
                       >
                         {day}
@@ -746,7 +927,7 @@ function Dashboard() {
 
               <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 bg-blue-600 rounded-full"></div>
+                  <div className="w-2.5 h-2.5 bg-emerald-600 rounded-full"></div>
                   <span className="text-[9px] font-extrabold text-slate-400 dark:text-slate-555 dark:text-slate-500 uppercase tracking-widest">Training Logged</span>
                 </div>
               </div>
@@ -795,14 +976,14 @@ function Dashboard() {
                       </td>
                     </tr>
                   ) : (
-                    records.map((record) => (
+                    paginatedRecords.map((record) => (
                       <tr key={record._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
                         <td className="px-6 py-4.5 whitespace-nowrap">
                           <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{new Date(record.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                         </td>
                         <td className="px-6 py-4.5 whitespace-nowrap font-medium">
                           <div className="flex items-center gap-1">
-                            <span className="text-sm font-extrabold text-blue-600 dark:text-blue-400">{record.totalHours.toFixed(2)}</span>
+                            <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">{record.totalHours.toFixed(2)}</span>
                             <span className="text-[9px] font-bold text-slate-400 uppercase">hrs</span>
                           </div>
                         </td>
@@ -819,7 +1000,7 @@ function Dashboard() {
                                 setProofStartIndex(0);
                                 setShowProofModal(true);
                               }}
-                              className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:text-blue-400 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                              className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 dark:text-emerald-400 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
                               aria-label="View proof images"
                             >
                               <Eye className="w-3.5 h-3.5" />
@@ -853,6 +1034,56 @@ function Dashboard() {
                 </tbody>
               </table>
             </div>
+
+            {records.length > 0 && (
+              <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-950/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                  Showing <span className="text-slate-800 dark:text-slate-200 font-extrabold">{indexOfFirstRecord + 1}</span> to <span className="text-slate-800 dark:text-slate-200 font-extrabold">{Math.min(indexOfLastRecord, records.length)}</span> of <span className="text-slate-800 dark:text-slate-200 font-extrabold">{records.length}</span> records
+                </p>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={goToPrevPage}
+                    disabled={validCurrentPage === 1}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all shadow-sm"
+                    title="Previous Page"
+                    aria-label="Previous Page"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalPages }, (_, index) => {
+                      const pageNum = index + 1;
+                      const isActive = pageNum === validCurrentPage;
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`w-8 h-8 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                            isActive
+                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
+                              : 'bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={goToNextPage}
+                    disabled={validCurrentPage === totalPages}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all shadow-sm"
+                    title="Next Page"
+                    aria-label="Next Page"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
         </div>
 
@@ -901,13 +1132,20 @@ function Dashboard() {
                   <p className="font-bold text-slate-800 dark:text-slate-200">{formData.breakDuration} Minutes</p>
                 </div>
                 
-                <div className="col-span-2 bg-gradient-to-br from-blue-600 to-indigo-700 p-5 rounded-[2rem] text-white flex justify-between items-center shadow-md shadow-blue-500/10">
+                <div className="col-span-2 bg-gradient-to-br from-emerald-600 to-teal-700 p-5 rounded-[2rem] text-white flex justify-between items-center shadow-md shadow-emerald-500/10">
                   <div>
-                    <p className="text-blue-200 text-[9px] uppercase font-bold tracking-widest mb-0.5">Computed Duty Hours</p>
+                    <p className="text-emerald-100 text-[9px] uppercase font-bold tracking-widest mb-0.5">Computed Duty Hours</p>
                     <p className="text-3xl font-extrabold">{pendingTotalHours} <span className="text-sm font-bold opacity-80">hrs</span></p>
                   </div>
                   <Clock className="w-9 h-9 text-white/20 animate-pulse" />
                 </div>
+
+                {isOvernightShift && (
+                  <div className="col-span-2 flex items-center gap-2 bg-teal-50 dark:bg-teal-950/40 p-3 rounded-xl border border-teal-200 dark:border-teal-900/50 text-xs font-bold text-teal-700 dark:text-teal-300">
+                    <Moon className="w-4 h-4 text-teal-500" />
+                    <span>Overnight Shift (Crosses Midnight)</span>
+                  </div>
+                )}
 
                 <div className="col-span-2 space-y-1.5">
                   <p className="text-[9px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Tasks Summary</p>
@@ -917,7 +1155,7 @@ function Dashboard() {
                 </div>
                 
                 <div className="col-span-2 flex items-center gap-2 bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400">
-                  <FileText className="w-4 h-4 text-blue-500" />
+                  <FileText className="w-4 h-4 text-emerald-500" />
                   <p>Attachments: <span className="text-slate-800 dark:text-slate-200">{files.length} image file(s) loaded</span></p>
                 </div>
 
@@ -935,7 +1173,7 @@ function Dashboard() {
               <button 
                 onClick={confirmSubmit}
                 disabled={isSubmitting}
-                className="flex-1 py-3.5 cursor-pointer rounded-2xl font-extrabold text-[10px] uppercase tracking-widest text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/10 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 py-3.5 cursor-pointer rounded-2xl font-extrabold text-[10px] uppercase tracking-widest text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/10 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isSubmitting ? 'Saving...' : 'Confirm & Save'}
               </button>

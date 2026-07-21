@@ -76,56 +76,54 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white flex flex-col md:flex-row font-sans overflow-hidden relative transition-colors duration-300">
+    <div className="min-h-screen md:h-screen w-full bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white flex flex-col md:flex-row font-sans overflow-x-hidden md:overflow-hidden relative transition-colors duration-300">
       
-
-
       {/* Decorative background blobs for the entire screen (visible behind panels) */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-float"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '3s' }}></div>
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl animate-float"></div>
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-600/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '3s' }}></div>
 
       {/* Left Side: Branding & Info */}
-      <div className="hidden md:flex md:w-1/2 p-12 lg:p-20 flex-col justify-between relative overflow-hidden bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-colors duration-300">
+      <div className="hidden md:flex md:w-1/2 p-8 lg:p-14 flex-col justify-between relative overflow-hidden bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-colors duration-300">
         
         {/* Floating gradient ambient blobs in background */}
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-500/10 rounded-full -mr-48 -mt-48 opacity-70 blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-indigo-500/10 rounded-full -ml-48 -mb-48 opacity-70 blur-3xl animate-pulse" style={{ animationDuration: '8s' }}></div>
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-500/10 rounded-full -mr-48 -mt-48 opacity-70 blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-teal-500/10 rounded-full -ml-48 -mb-48 opacity-70 blur-3xl animate-pulse" style={{ animationDuration: '8s' }}></div>
         
         <div className="relative z-10 animate-slide-up">
-          <div className="inline-flex items-center gap-3 bg-slate-100/80 dark:bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-slate-200 dark:border-white/10 mb-10">
-            <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span className="text-blue-700 dark:text-blue-300 text-xs font-semibold uppercase tracking-widest">OJT TRACKER V1.1.0</span>
+          <div className="inline-flex items-center gap-3 bg-slate-100/80 dark:bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-slate-200 dark:border-white/10 mb-6 lg:mb-10">
+            <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-emerald-700 dark:text-emerald-300 text-xs font-semibold uppercase tracking-widest">OJT TRACKER V1.2.0</span>
           </div>
-          <h1 className="text-4xl lg:text-6xl font-extrabold text-slate-900 dark:text-white leading-tight mb-6 tracking-tight">
+          <h1 className="text-3xl lg:text-5xl font-extrabold text-slate-900 dark:text-white leading-tight mb-4 lg:mb-6 tracking-tight">
             Master your <br /> 
-            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">duty hours</span> <br />
+            <span className="bg-gradient-to-r from-emerald-600 to-teal-600 dark:from-emerald-400 dark:to-teal-400 bg-clip-text text-transparent">duty hours</span> <br />
             with absolute ease.
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-base lg:text-lg max-w-md leading-relaxed">
+          <p className="text-slate-500 dark:text-slate-400 text-sm lg:text-base max-w-md leading-relaxed">
             The professional dashboard for students to log hours, document daily task completions, and generate beautiful, compliance-ready reports.
           </p>
         </div>
 
-        <div className="relative z-10 grid grid-cols-2 gap-8 border-t border-slate-200 dark:border-slate-800 pt-8 animate-slide-up delay-100">
+        <div className="relative z-10 grid grid-cols-2 gap-6 border-t border-slate-200 dark:border-slate-800 pt-6 animate-slide-up delay-100">
           <div className="space-y-1">
-            <p className="text-slate-900 dark:text-white font-extrabold text-3xl tracking-tight">100%</p>
+            <p className="text-slate-900 dark:text-white font-extrabold text-2xl lg:text-3xl tracking-tight">100%</p>
             <p className="text-slate-450 dark:text-slate-500 text-[10px] uppercase font-bold tracking-wider">Secure & Protected</p>
           </div>
           <div className="space-y-1">
-            <p className="text-slate-900 dark:text-white font-extrabold text-3xl tracking-tight">Instant</p>
+            <p className="text-slate-900 dark:text-white font-extrabold text-2xl lg:text-3xl tracking-tight">Instant</p>
             <p className="text-slate-450 dark:text-slate-500 text-[10px] uppercase font-bold tracking-wider">DTR PDF Export</p>
           </div>
         </div>
       </div>
 
       {/* Right Side: Login Card */}
-      <div className="flex-1 flex items-center justify-center p-6 md:p-12 z-10">
+      <div className="flex-1 flex items-center justify-center p-6 md:p-8 lg:p-12 z-10 overflow-y-auto">
         <div className="max-w-md w-full animate-scale-up">
           
           {/* Mobile Branding */}
           <div className="md:hidden text-center mb-8">
-            <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-600/10 border border-blue-500/20 rounded-2xl mb-4">
-              <Clock className="w-8 h-8 text-blue-500 dark:text-blue-400" />
+            <div className="inline-flex items-center justify-center w-14 h-14 bg-emerald-600/10 border border-emerald-500/20 rounded-2xl mb-4">
+              <Clock className="w-8 h-8 text-emerald-500 dark:text-emerald-400" />
             </div>
             <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">OJT Tracker</h1>
           </div>
@@ -148,7 +146,7 @@ function Login() {
 
           {/* Login Container with Glassmorphism */}
           <div className="glass-panel dark:glass-panel-dark rounded-[2.5rem] p-8 lg:p-10 shadow-2xl relative overflow-hidden transition-colors">
-            <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+            <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600"></div>
             
             <div className="flex justify-between items-start mb-8 gap-4">
               <div>
@@ -171,7 +169,7 @@ function Login() {
                 "Generate school reports"
               ].map((text, i) => (
                 <div key={i} className="flex items-center gap-4 group">
-                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700 group-hover:bg-blue-600 group-hover:border-blue-500 transition-all duration-300">
+                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700 group-hover:bg-emerald-600 group-hover:border-emerald-500 transition-all duration-300">
                     <CheckCircle className="w-4 h-4 text-slate-400 group-hover:text-white" />
                   </div>
                   <span className="text-slate-650 text-slate-600 dark:text-slate-300 text-sm font-medium group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{text}</span>
@@ -189,10 +187,10 @@ function Login() {
                     setAgreed(e.target.checked);
                     if (e.target.checked) setError('');
                   }}
-                  className="mt-0.5 w-5 h-5 text-blue-600 rounded-lg focus:ring-blue-500/20 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 cursor-pointer"
+                  className="mt-0.5 w-5 h-5 text-emerald-600 rounded-lg focus:ring-emerald-500/20 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 cursor-pointer"
                 />
                 <label htmlFor="terms" className="text-xs text-slate-500 dark:text-slate-400 cursor-pointer select-none leading-relaxed">
-                  I agree to the <Link to="/terms" className="text-blue-600 dark:text-blue-400 font-bold hover:underline hover:text-blue-500 dark:hover:text-blue-300">Terms and Conditions</Link> regarding data privacy and consent.
+                  I agree to the <Link to="/terms" className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline hover:text-emerald-500 dark:hover:text-emerald-300">Terms and Conditions</Link> regarding data privacy and consent.
                 </label>
               </div>
 
@@ -209,7 +207,7 @@ function Login() {
                   />
                   {isLoading && (
                     <div className="absolute inset-0 bg-slate-950/60 flex items-center justify-center pointer-events-none">
-                      <div className="w-5 h-5 border-3 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                      <div className="w-5 h-5 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
                     </div>
                   )}
                 </div>

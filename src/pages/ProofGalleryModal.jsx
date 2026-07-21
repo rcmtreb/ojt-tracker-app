@@ -53,7 +53,7 @@ export default function ProofGalleryModal({ visible, images = [], startIndex = 0
           <p className="font-extrabold text-slate-800 text-lg">No Images</p>
           <p className="text-slate-400 text-sm mt-1">There are no files attached to this record.</p>
           <div className="mt-6">
-            <button onClick={onClose} className="px-6 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider cursor-pointer transition-colors shadow-md shadow-blue-500/10">Close</button>
+            <button onClick={onClose} className="px-6 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider cursor-pointer transition-colors shadow-md shadow-emerald-500/10">Close</button>
           </div>
         </div>
       </div>
@@ -125,7 +125,7 @@ export default function ProofGalleryModal({ visible, images = [], startIndex = 0
               <button
                 key={idx}
                 onClick={() => setCurrent(idx)}
-                className={`w-2 h-2 rounded-full cursor-pointer transition-all duration-300 ${idx === current ? 'bg-blue-500 w-4' : 'bg-slate-700 hover:bg-slate-600'}`}
+                className={`w-2 h-2 rounded-full cursor-pointer transition-all duration-300 ${idx === current ? 'bg-emerald-500 w-4' : 'bg-slate-700 hover:bg-slate-600'}`}
                 aria-label={`Go to image ${idx+1}`}
               />
             ))}

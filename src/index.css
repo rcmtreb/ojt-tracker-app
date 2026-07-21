@@ -68,8 +68,8 @@
 /* Custom glowing focus states */
 .premium-input:focus {
   outline: none;
-  border-color: var(--color-blue-500);
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+  border-color: var(--color-emerald-500);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15);
 }
 
 /* Custom animation delays */
