@@ -62,6 +62,7 @@ const recordSchema = new mongoose.Schema({
     breakDuration: Number,
     totalHours: Number,
     taskDescription: String,
+    category: { type: String, default: 'Development' },
     documentaryUrls: [String]
 });
 const Record = mongoose.model('Record', recordSchema);

@@ -1,10 +1,29 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
-import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand } from 'lucide-react';
+import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand, Target, Flame, BarChart3, Code2, Palette, Wrench, ClipboardList, Loader2 } from 'lucide-react';
 import ProofGalleryModal from './ProofGalleryModal';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useNavigate } from 'react-router-dom';
+
+const SKILL_CATEGORIES = [
+  { id: 'Development', label: 'Development & Engineering', iconName: 'Code2', color: 'bg-emerald-500', barColor: 'from-emerald-500 to-teal-500' },
+  { id: 'Documentation', label: 'Documentation & Reports', iconName: 'FileText', color: 'bg-teal-500', barColor: 'from-teal-500 to-cyan-500' },
+  { id: 'Design', label: 'Design & Prototyping', iconName: 'Palette', color: 'bg-purple-500', barColor: 'from-purple-500 to-indigo-500' },
+  { id: 'Support', label: 'System Maintenance & Support', iconName: 'Wrench', color: 'bg-amber-500', barColor: 'from-amber-500 to-orange-500' },
+  { id: 'Admin', label: 'Administrative & Meetings', iconName: 'ClipboardList', color: 'bg-slate-500', barColor: 'from-slate-500 to-slate-600' }
+];
+
+const getCategoryIcon = (iconName, className = "w-4 h-4") => {
+  switch (iconName) {
+    case 'Code2': return <Code2 className={className} />;
+    case 'FileText': return <FileText className={className} />;
+    case 'Palette': return <Palette className={className} />;
+    case 'Wrench': return <Wrench className={className} />;
+    case 'ClipboardList': return <ClipboardList className={className} />;
+    default: return <Code2 className={className} />;
+  }
+};
 
 const VITE_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const API_URL = `${VITE_API_URL}/api`;
@@ -36,7 +55,8 @@ function Dashboard() {
     startTime: '',
     endTime: '',
     breakDuration: 0,
-    taskDescription: ''
+    taskDescription: '',
+    category: 'Development'
   });
   const [showModal, setShowModal] = useState(false);
   const [pendingTotalHours, setPendingTotalHours] = useState(0);
@@ -46,6 +66,8 @@ function Dashboard() {
   const [viewDate, setViewDate] = useState(new Date());
   const [editingRecordId, setEditingRecordId] = useState(null);
   const [formError, setFormError] = useState('');
+  const [isLoadingRecords, setIsLoadingRecords] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const recordsPerPage = 5;
@@ -145,6 +167,65 @@ function Dashboard() {
     };
   };
 
+  // Pure JS OJT Pace Predictor & Streak Calculator
+  const calculateForecaster = () => {
+    if (records.length === 0 || remainingHours <= 0) {
+      return { projectedDate: null, daysNeeded: 0, avgHoursPerDay: '0.0', streak: 0 };
+    }
+
+    const totalLoggedHours = totalAccumulatedHours;
+    const uniqueDaysCount = new Set(records.map(r => r.date)).size || 1;
+    const avgHoursPerDay = totalLoggedHours / uniqueDaysCount;
+
+    if (avgHoursPerDay <= 0) {
+      return { projectedDate: null, daysNeeded: 0, avgHoursPerDay: '0.0', streak: 0 };
+    }
+
+    const daysNeeded = Math.ceil(remainingHours / avgHoursPerDay);
+
+    // Calculate projected date counting weekdays (Mon-Fri) only
+    let targetDate = new Date();
+    let addedDays = 0;
+    while (addedDays < daysNeeded) {
+      targetDate.setDate(targetDate.getDate() + 1);
+      const dayOfWeek = targetDate.getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Skip weekends
+        addedDays++;
+      }
+    }
+
+    // Calculate logging streak (consecutive days logged)
+    const sortedDates = Array.from(new Set(records.map(r => r.date))).sort((a, b) => new Date(b) - new Date(a));
+    let streak = 0;
+    if (sortedDates.length > 0) {
+      let checkDate = new Date();
+      const todayStr = checkDate.toISOString().split('T')[0];
+      checkDate.setDate(checkDate.getDate() - 1);
+      const yestStr = checkDate.toISOString().split('T')[0];
+
+      if (sortedDates.includes(todayStr) || sortedDates.includes(yestStr)) {
+        let curr = new Date(sortedDates.includes(todayStr) ? todayStr : yestStr);
+        while (true) {
+          const currStr = curr.toISOString().split('T')[0];
+          if (sortedDates.includes(currStr)) {
+            streak++;
+            curr.setDate(curr.getDate() - 1);
+            if (curr.getDay() === 0) curr.setDate(curr.getDate() - 2); // Skip weekend
+          } else {
+            break;
+          }
+        }
+      }
+    }
+
+    return {
+      projectedDate: targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      daysNeeded,
+      avgHoursPerDay: avgHoursPerDay.toFixed(1),
+      streak
+    };
+  };
+
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -172,8 +253,10 @@ function Dashboard() {
       startTime: record.startTime || '',
       endTime: record.endTime || '',
       breakDuration: record.breakDuration || 0,
-      taskDescription: record.taskDescription || ''
+      taskDescription: record.taskDescription || '',
+      category: record.category || 'Development'
     });
+    setFormError('');
     setFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -194,6 +277,7 @@ function Dashboard() {
   };
 
   const fetchRecords = useCallback(async (token) => {
+    setIsLoadingRecords(true);
     try {
       const response = await axios.get(`${API_URL}/records`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -209,6 +293,8 @@ function Dashboard() {
       if (error.response?.status === 401) {
         handleLogout();
       }
+    } finally {
+      setIsLoadingRecords(false);
     }
   }, [handleLogout]);
 
@@ -364,6 +450,7 @@ function Dashboard() {
   const deleteRecord = async (id) => {
     if (!window.confirm('Are you sure you want to delete this record?')) return;
     const token = localStorage.getItem('token');
+    setDeletingId(id);
     try {
       await axios.delete(`${API_URL}/records/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -371,6 +458,9 @@ function Dashboard() {
       fetchRecords(token);
     } catch (error) {
       console.error('Error deleting record:', error);
+      alert('Failed to delete record.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -752,7 +842,6 @@ function Dashboard() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 animate-fade-in">
         
-        {/* Welcome & Stats Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
           
           {/* Progress Card */}
@@ -854,6 +943,33 @@ function Dashboard() {
                   </div>
                 </div>
               </div>
+
+              {/* OJT Completion Forecast & Streak Badge */}
+              {(() => {
+                const forecaster = calculateForecaster();
+                return (
+                  <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    {forecaster.projectedDate ? (
+                      <div className="flex items-center gap-2 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/50 px-3 py-1.5 rounded-xl text-emerald-700 dark:text-emerald-300 font-medium">
+                        <Target className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                        <span>Projected Completion: <strong className="font-extrabold text-emerald-800 dark:text-emerald-200">{forecaster.projectedDate}</strong> (~{forecaster.daysNeeded} duty days at {forecaster.avgHoursPerDay} hrs/day)</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800/50 px-3 py-1.5 rounded-xl text-slate-500 dark:text-slate-400 font-medium">
+                        <Target className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                        <span>Projected Completion: <strong className="font-bold text-slate-600 dark:text-slate-300">Log 1 entry to calculate velocity forecast</strong></span>
+                      </div>
+                    )}
+
+                    {forecaster.streak > 0 && (
+                      <div className="flex items-center gap-1.5 bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/50 px-3 py-1.5 rounded-xl text-amber-700 dark:text-amber-300 font-extrabold">
+                        <Flame className="w-4 h-4 text-amber-500 fill-amber-400 animate-pulse" />
+                        <span>{forecaster.streak}-Day Duty Streak!</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -988,6 +1104,20 @@ function Dashboard() {
                       <span>Overnight Duty Shift Detected (crosses midnight into next day). Shift total will be calculated accurately.</span>
                     </div>
                   )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">Task Category / Skill Domain</label>
+                  <select
+                    name="category"
+                    value={formData.category || 'Development'}
+                    onChange={handleChange}
+                    className="w-full rounded-2xl border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 shadow-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 p-3.5 border transition-all text-sm font-medium outline-none cursor-pointer"
+                  >
+                    {SKILL_CATEGORIES.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.label}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">
@@ -1135,6 +1265,69 @@ function Dashboard() {
           </div>
         </div>
 
+        {/* OJT Skill Competency Matrix Widget */}
+        <div className="bg-white dark:bg-slate-900/60 rounded-[2.2rem] p-6 sm:p-8 border border-slate-100 dark:border-slate-800/70 shadow-sm mb-8 transition-colors">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-emerald-50 border border-emerald-100 dark:bg-emerald-950/20 dark:border-emerald-900 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center">
+                <BarChart3 className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-800 dark:text-white tracking-tight">OJT Skill Competency Matrix</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Distribution of your logged training hours across professional skill domains</p>
+              </div>
+            </div>
+
+            {(() => {
+              const skillMatrixData = SKILL_CATEGORIES.map(cat => {
+                const categoryRecords = records.filter(r => (r.category || 'Development') === cat.id);
+                const categoryHours = categoryRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+                const percent = totalAccumulatedHours > 0 ? (categoryHours / totalAccumulatedHours) * 100 : 0;
+                return { ...cat, hours: categoryHours, percent };
+              });
+              const topCat = skillMatrixData.reduce((prev, curr) => (curr.hours > prev.hours) ? curr : prev, skillMatrixData[0]);
+              if (!topCat || topCat.hours === 0) return null;
+              return (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Primary Focus:</span>
+                  {getCategoryIcon(topCat.iconName, "w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400")}
+                  <span>{topCat.label} ({topCat.percent.toFixed(0)}%)</span>
+                </span>
+              );
+            })()}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {SKILL_CATEGORIES.map(cat => {
+              const categoryRecords = records.filter(r => (r.category || 'Development') === cat.id);
+              const categoryHours = categoryRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+              const percent = totalAccumulatedHours > 0 ? (categoryHours / totalAccumulatedHours) * 100 : 0;
+              return (
+                <div key={cat.id} className="bg-slate-50/70 dark:bg-slate-950/50 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between transition-all hover:border-slate-200 dark:hover:border-slate-700">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="w-8 h-8 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 shadow-xs">
+                        {getCategoryIcon(cat.iconName, "w-4 h-4")}
+                      </div>
+                      <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300">{percent.toFixed(0)}%</span>
+                    </div>
+                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight mb-1">{cat.label}</h3>
+                    <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">{categoryHours.toFixed(1)} hrs logged</p>
+                  </div>
+                  
+                  <div className="w-full bg-slate-200/60 dark:bg-slate-800 rounded-full h-2 mt-3 overflow-hidden">
+                    <div 
+                      className={`h-2 rounded-full bg-gradient-to-r ${cat.barColor} transition-all duration-700`}
+                      style={{ width: `${percent}%` }}
+                    ></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Table Full Width */}
         <div className="w-full">
           <section className="bg-white dark:bg-slate-900/60 rounded-[2.2rem] shadow-sm border border-slate-100 dark:border-slate-850 dark:border-slate-800/70 overflow-hidden transition-colors">
@@ -1189,6 +1382,10 @@ function Dashboard() {
                         </td>
                         <td className="px-6 py-4.5">
                           <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 max-w-2xl">{record.taskDescription || 'No description provided'}</p>
+                          <span className="inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-slate-100/80 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 border border-slate-200/40 dark:border-slate-700/40">
+                            {getCategoryIcon(SKILL_CATEGORIES.find(c => c.id === (record.category || 'Development'))?.iconName, "w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400")}
+                            <span>{SKILL_CATEGORIES.find(c => c.id === (record.category || 'Development'))?.label || 'Development & Engineering'}</span>
+                          </span>
                         </td>
                         <td className="px-6 py-4.5 whitespace-nowrap">
                           {record.documentaryUrls && record.documentaryUrls.length > 0 ? (
@@ -1221,10 +1418,15 @@ function Dashboard() {
                             </button>
                             <button 
                                 onClick={() => deleteRecord(record._id)} 
-                                className="p-2 cursor-pointer text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-all"
+                                disabled={deletingId === record._id}
+                                className="p-2 cursor-pointer text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-all disabled:opacity-50"
                                 title="Delete record"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              {deletingId === record._id ? (
+                                <Loader2 className="w-4 h-4 text-red-500 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
                             </button>
                           </div>
                         </td>
@@ -1380,13 +1582,48 @@ function Dashboard() {
                 disabled={isSubmitting}
                 className="flex-1 py-3.5 cursor-pointer rounded-2xl font-extrabold text-[10px] uppercase tracking-widest text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/10 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {isSubmitting ? 'Saving...' : 'Confirm & Save'}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    <span>{editingRecordId ? 'Updating Log Entry...' : 'Uploading & Saving...'}</span>
+                  </>
+                ) : (
+                  <span>{editingRecordId ? 'Confirm & Update' : 'Confirm & Save'}</span>
+                )}
               </button>
             </div>
-
           </div>
         </div>
       )}
+
+      {/* Floating Centered Circling Loading Modal */}
+      {(() => {
+        const activeLoadingMessage = isLoadingRecords
+          ? 'Syncing OJT records...'
+          : isSubmitting && editingRecordId
+          ? 'Updating log entry...'
+          : isSubmitting
+          ? 'Uploading & saving entry...'
+          : deletingId
+          ? 'Deleting log entry...'
+          : null;
+
+        if (!activeLoadingMessage) return null;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col items-center gap-4 text-center animate-scale-up max-w-xs w-full">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-inner">
+                <Loader2 className="w-7 h-7 animate-spin" />
+              </div>
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">{activeLoadingMessage}</h4>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-medium">Please wait a moment...</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

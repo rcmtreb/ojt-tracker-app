@@ -1,6 +1,6 @@
-# OJT Tracker App (v1.2.0)
+# OJT Tracker App (v1.3.0)
 
-A full-stack On-the-Job Training (OJT) duty hours management system built for students to log hours, document daily task completions, track achievement milestones, and generate compliance-ready DTR PDF reports.
+A full-stack On-the-Job Training (OJT) duty hours management system built for students to log hours, document daily task completions, track achievement milestones, visualize skill competencies, and generate compliance-ready DTR PDF reports.
 
 Designed with a modern, minimalist Sage & Emerald aesthetic in both Light and Dark modes.
 
@@ -8,19 +8,36 @@ Designed with a modern, minimalist Sage & Emerald aesthetic in both Light and Da
 
 ## Features
 
-### Smart Form Validations
-- **Shift Time Check**: Enforces valid shift windows and ensures break durations do not meet or exceed total shift minutes.
-- **Future Date Guard**: Restricts date selection to today or earlier dates (`YYYY-MM-DD`).
-- **File Upload Protection**: Enforces a `< 2MB` per image size limit and restricts uploads to supported image formats (`image/*`).
-- **Duplicate Entry Warning**: Displays an inline warning if a log entry already exists for the selected date.
+### OJT Completion Date Forecaster & Streak Tracker
+- **Pace Velocity Predictor**: Calculates projected target completion date using pure JavaScript working-day date arithmetic, skipping non-duty weekend days (Saturday & Sunday).
+- **Daily Duty Streak**: Tracks consecutive days logged to encourage consistent daily habits.
 
-### Smart Overnight Shift Support
-- **Cross-Midnight Calculation**: Automatically handles overnight shifts (e.g. 8:00 PM to 6:00 AM = 10 hrs) without false validation errors.
-- **Overnight Badge**: Displays an Overnight Duty Shift indicator banner in the form and entry review popup.
+### OJT Skill Competency Matrix Analytics
+- **Task Domain Categorization**: Categorizes daily log entries into 5 skill pillars:
+  - Development & Engineering
+  - Documentation & Reports
+  - Design & Prototyping
+  - System Maintenance & Support
+  - Administrative & Meetings
+- **Skill Matrix Widget**: Renders visual percentage breakdown bars and highlights primary focus domains across all logged duty hours.
+
+### Small Floating Circling Loading Modal
+- **Contextual Loading Indicator**: Displays a floating centered loading modal popup with an animated circling spinner for data fetching, uploading, editing, and deleting records.
+
+### Official 7-Column DTR PDF Report Export
+- **Ascending Chronological Order**: Orders entries from earliest duty date at the top to latest duty log entry at the bottom.
+- **7-Column Session Format**: `DATE`, `DAY`, `TIME IN`, `TIME OUT` (Morning session), `TIME IN`, `TIME OUT` (Afternoon session), and `Daily Hours`.
+- **Zero-Overlap Student Profile Box**: Structured 2-column card for Student Info, Date Range, Total Worked Hours, and Progress Status.
+- **3 Formal Signature Line Blocks**: Official approval blocks for Student Trainee, OJT Industry Supervisor, and Academic Coordinator.
+
+### Smart Form Validations & Overnight Shift Support
+- **Cross-Midnight Calculation**: Calculates overnight duty shifts (e.g. 8:00 PM to 6:00 AM = 10.0 hrs) accurately.
+- **Overnight Shift Indicator**: Displays an overnight shift badge in the form and review popup.
+- **Validation Guards**: Restricts future dates, enforces shift windows, caps file upload sizes at `< 2MB` per image, and warns on duplicate dates.
 
 ### Target Exceeded & Overtime Bonus
-- **Uncapped Progress Percentage**: Displays actual completion percentages beyond 100% (e.g. `115% COMPLETED`).
-- **Overtime Bonus Tracker**: Replaces "0.0 HRS REMAINING" with a glowing `+X.X HRS OVERTIME BONUS` pill when target hours are surpassed.
+- **Uncapped Progress Percentage**: Displays completion percentages beyond 100% (e.g. `115% COMPLETED`).
+- **Overtime Bonus Tracker**: Replaces remaining hours banner with a glowing `+X.X HRS OVERTIME BONUS` badge.
 - **Shimmering Metallic Progress Bar**: Morphs into a gold-emerald gradient when requirement goals are fulfilled.
 
 ### Trainee Achievement Ranks
@@ -29,12 +46,6 @@ Designed with a modern, minimalist Sage & Emerald aesthetic in both Light and Da
   - **Dedicated Apprentice** (25% - 74.9%)
   - **OJT Specialist** (75% - 99.9%)
   - **Overachieving Master** (100%+)
-
-### 5-Record Table Pagination
-- Compact Activity Log Records table displaying 5 records per page with a sleek pagination control bar (`Showing 1-5 of 24 records`), direct page selector buttons, and Previous/Next controls.
-
-### DTR PDF Report Export
-- Instant client-side PDF report generation featuring student details, accumulated duty hours, shift breakdowns, and task summaries powered by `jspdf` and `jspdf-autotable`.
 
 ---
 
@@ -49,34 +60,30 @@ Designed with a modern, minimalist Sage & Emerald aesthetic in both Light and Da
 
 ### Backend
 - **Server**: Node.js + Express
-- **Database**: MongoDB + Mongoose
-- **File Uploads**: Multer (`multipart/form-data`)
-- **Authentication**: JWT (JSON Web Tokens)
+- **Database**: MongoDB (Mongoose Schema)
+- **Auth**: Google OAuth 2.0 + JSON Web Token (JWT)
+- **File Processing**: Multer (`multipart/form-data`)
 
 ---
 
-## Getting Started
+## Developer Credit Footer
 
-### 1. Prerequisites
-- Node.js (v18+ recommended)
-- MongoDB instance (Local or MongoDB Atlas)
+Implemented across Login, Dashboard, and Terms pages:
+
+`© 2026 OJT Tracker System • Developed by Alberto Rili`
+
+---
+
+## Installation & Local Development
+
+### Prerequisites
+- Node.js (v18+)
+- MongoDB instance running locally or via MongoDB Atlas
 - Google Cloud OAuth 2.0 Client ID
 
-### 2. Installation
+### Environment Configuration
+Create a `.env` file inside the `backend/` directory:
 
-Install root dependencies (Frontend):
-```bash
-npm install
-```
-
-Install backend dependencies:
-```bash
-npm --prefix backend install
-```
-
-### 3. Environment Setup
-
-Create a `.env` file in the `backend/` directory:
 ```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/ojt-tracker
@@ -84,38 +91,38 @@ JWT_SECRET=your_jwt_secret_key
 GOOGLE_CLIENT_ID=your_google_client_id
 ```
 
-### 4. Running Locally
+### Install Dependencies
 
-Start Frontend (Vite dev server):
 ```bash
-npm run dev
+# Install root dependencies
+npm install
+
+# Install backend dependencies
+npm --prefix backend install
 ```
 
-Start Backend (Express dev server with nodemon):
+### Start Development Server
+
 ```bash
+# Start frontend (Vite)
+npm run dev
+
+# Start backend (Nodemon)
 npm --prefix backend run dev
 ```
 
----
+### Production Build & Lint Verification
 
-## Verification & Build Commands
-
-Run ESLint:
 ```bash
+# Run ESLint
 npm run lint
-```
 
-Build production bundle:
-```bash
+# Build frontend production bundle
 npm run build
 ```
 
-Preview production build:
-```bash
-npm run preview
-```
-
 ---
 
-## Design Theme
-The app features a custom Sage & Emerald color palette (`emerald-600`, `teal-600`, slate neutrals) designed for a calm, sleek, non-oversaturated modern look in both Light and Dark mode.
+## License
+
+This project is open source and available under the [MIT License](LICENSE).
