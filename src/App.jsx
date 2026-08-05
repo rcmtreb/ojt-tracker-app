@@ -3,10 +3,14 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Terms from './pages/Terms';
+import AdminLogin from './pages/AdminLogin';
+import AdminDashboard from './pages/AdminDashboard';
+import NotFound from './pages/NotFound';
 
 // NOTE: You must create a project in Google Cloud Console, 
 // enable Google People API, and get a Client ID.
 const GOOGLE_CLIENT_ID = "1021240931407-d22o1pbm1c10jpsor4qc2irfmu66fmel.apps.googleusercontent.com";
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || '';
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -14,6 +18,17 @@ const ProtectedRoute = ({ children }) => {
   const hasUser = user && user !== 'null' && user !== 'undefined';
   if (!token || !hasUser) {
     return <Navigate to="/" replace />;
+  }
+  return children;
+};
+
+const AdminRoute = ({ children }) => {
+  const token = localStorage.getItem('admin_token');
+  const user = (() => {
+    try { return JSON.parse(localStorage.getItem('admin_user') || 'null'); } catch { return null; }
+  })();
+  if (!token || user?.email !== ADMIN_EMAIL) {
+    return <Navigate to="/admin-login" replace />;
   }
   return children;
 };
@@ -33,6 +48,16 @@ function App() {
               </ProtectedRoute>
             } 
           />
+          <Route path="/admin-login" element={<AdminLogin />} />
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>
     </GoogleOAuthProvider>

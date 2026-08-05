@@ -1,0 +1,861 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import {
+  LayoutDashboard, Users, FileText, LogOut, Menu, X,
+  ShieldCheck, Clock, TrendingUp, Activity, Search,
+  ChevronRight, Medal, Trophy, Crown, Briefcase,
+  Code2, Palette, Wrench, ClipboardList, Download, Loader2,
+  Calendar, BarChart3, Hand
+} from 'lucide-react';
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
+  PieChart, Pie, Cell, Legend
+} from 'recharts';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || '';
+const DEFAULT_TARGET = 486;
+
+const CHART_COLORS = ['#10b981', '#14b8a6', '#a855f7', '#f59e0b', '#64748b'];
+const RANK_COLORS = { 'Overachieving Master': '#f59e0b', 'OJT Specialist': '#10b981', 'Dedicated Apprentice': '#3b82f6', 'Rookie Trainee': '#64748b' };
+
+const SKILL_CATEGORIES = [
+  { id: 'Development', label: 'Development & Engineering', icon: Code2, color: 'bg-emerald-500', bar: 'from-emerald-500 to-teal-500' },
+  { id: 'Documentation', label: 'Documentation & Reports', icon: FileText, color: 'bg-teal-500', bar: 'from-teal-500 to-cyan-500' },
+  { id: 'Design', label: 'Design & Prototyping', icon: Palette, color: 'bg-purple-500', bar: 'from-purple-500 to-indigo-500' },
+  { id: 'Support', label: 'System Maintenance & Support', icon: Wrench, color: 'bg-amber-500', bar: 'from-amber-500 to-orange-500' },
+  { id: 'Admin', label: 'Administrative & Meetings', icon: ClipboardList, color: 'bg-slate-500', bar: 'from-slate-500 to-slate-600' },
+];
+
+function getRankBadge(pct) {
+  if (pct >= 100) return { label: 'Overachieving Master', icon: Crown, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/50' };
+  if (pct >= 75)  return { label: 'OJT Specialist',       icon: Trophy, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/50' };
+  if (pct >= 25)  return { label: 'Dedicated Apprentice', icon: Medal,  color: 'text-blue-500',    bg: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/50' };
+  return               { label: 'Rookie Trainee',         icon: Hand,   color: 'text-slate-500',   bg: 'bg-slate-50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800/50' };
+}
+
+// ─── PDF Helpers ─────────────────────────────────────────────────────────────
+function formatTime(t) { return t || '--:--'; }
+
+function buildDTRPdf(doc, student, records, startY = 14) {
+  const name = student.name || 'Student';
+  const totalHrs = parseFloat(student.totalHours || 0).toFixed(2);
+  const pct = Math.min(((student.totalHours / DEFAULT_TARGET) * 100), 999).toFixed(1);
+
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('DAILY TIME RECORD', 105, startY, { align: 'center' });
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('Official OJT Duty Log', 105, startY + 5, { align: 'center' });
+
+  // Student info box
+  const infoY = startY + 10;
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(14, infoY, 182, 18, 2, 2, 'F');
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('STUDENT NAME', 18, infoY + 5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 41, 59);
+  doc.text(name, 18, infoY + 10);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('TOTAL HOURS LOGGED', 80, infoY + 5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 41, 59);
+  doc.text(`${totalHrs} hrs`, 80, infoY + 10);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('PROGRESS', 148, infoY + 5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 41, 59);
+  doc.text(`${pct}% of ${DEFAULT_TARGET} hrs`, 148, infoY + 10);
+
+  // Table
+  const tableY = infoY + 22;
+  const tableRows = records.map(r => {
+    const d = new Date(r.date);
+    const dateStr = d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+    const dayStr = d.toLocaleDateString('en-US', { weekday: 'short' });
+    return [
+      dateStr,
+      dayStr,
+      formatTime(r.startTime),
+      '',
+      '',
+      formatTime(r.endTime),
+      `${parseFloat(r.totalHours || 0).toFixed(2)} hrs`
+    ];
+  });
+
+  autoTable(doc, {
+    startY: tableY,
+    head: [['DATE', 'DAY', 'TIME IN', 'TIME OUT', 'TIME IN', 'TIME OUT', 'HOURS']],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: { fillColor: [5, 150, 105], textColor: 255, fontStyle: 'bold', fontSize: 7 },
+    bodyStyles: { fontSize: 7, textColor: [30, 41, 59] },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: { 6: { fontStyle: 'bold', textColor: [5, 150, 105] } },
+    margin: { left: 14, right: 14 },
+  });
+
+  return doc.lastAutoTable.finalY;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+export default function AdminDashboard() {
+  const navigate = useNavigate();
+  const [adminUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('admin_user') || 'null'); } catch { return null; }
+  });
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState('overview');
+  const [stats, setStats] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [drawerStudent, setDrawerStudent] = useState(null);
+  const [drawerRecords, setDrawerRecords] = useState([]);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [exportingId, setExportingId] = useState(null);
+  const [exportingAll, setExportingAll] = useState(false);
+
+  const authHeader = useCallback(() => ({
+    Authorization: `Bearer ${localStorage.getItem('admin_token')}`
+  }), []);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_user');
+    navigate('/admin-login', { replace: true });
+  }, [navigate]);
+
+  // Fetch stats + students on mount
+  useEffect(() => {
+    const token = localStorage.getItem('admin_token');
+    const user = (() => { try { return JSON.parse(localStorage.getItem('admin_user') || 'null'); } catch { return null; } })();
+    if (!token || user?.email !== ADMIN_EMAIL) {
+      navigate('/admin-login', { replace: true });
+      return;
+    }
+    const fetchAll = async () => {
+      setIsLoading(true);
+      try {
+        const [statsRes, usersRes] = await Promise.all([
+          axios.get(`${API_URL}/admin/stats`, { headers: authHeader() }),
+          axios.get(`${API_URL}/admin/users`, { headers: authHeader() }),
+        ]);
+        setStats(statsRes.data);
+        setStudents(usersRes.data);
+      } catch (err) {
+        if (err.response?.status === 401 || err.response?.status === 403) handleLogout();
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchAll();
+  }, [authHeader, handleLogout, navigate]);
+
+  // Open student drawer
+  const openDrawer = async (student) => {
+    setDrawerStudent(student);
+    setDrawerRecords([]);
+    setDrawerLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/admin/users/${student._id}/records`, { headers: authHeader() });
+      setDrawerRecords(res.data);
+    } catch {
+      setDrawerRecords([]);
+    } finally {
+      setDrawerLoading(false);
+    }
+  };
+
+  // Per-student PDF export
+  const exportStudentPDF = async (student) => {
+    setExportingId(student._id);
+    try {
+      const res = await axios.get(`${API_URL}/admin/users/${student._id}/records`, { headers: authHeader() });
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      buildDTRPdf(doc, student, res.data);
+      doc.save(`DTR_${(student.name || 'Student').replace(/\s+/g, '_')}.pdf`);
+    } catch { /* silent */ } finally {
+      setExportingId(null);
+    }
+  };
+
+  // Combined all-students PDF export
+  const exportAllPDF = async () => {
+    setExportingAll(true);
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+      // Cover page
+      doc.setFillColor(5, 150, 105);
+      doc.rect(0, 0, 210, 60, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.setTextColor(255, 255, 255);
+      doc.text('OJT TRACKER SYSTEM', 105, 30, { align: 'center' });
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Combined Daily Time Record — All Students', 105, 40, { align: 'center' });
+      doc.setFontSize(8);
+      doc.setTextColor(209, 250, 229);
+      doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`, 105, 50, { align: 'center' });
+
+      // Summary table
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Students Overview', 14, 78);
+      autoTable(doc, {
+        startY: 83,
+        head: [['#', 'Student Name', 'Email', 'Records', 'Total Hours', 'Progress']],
+        body: students.map((s, i) => [
+          i + 1,
+          s.name || '',
+          s.email || '',
+          s.totalRecords,
+          `${s.totalHours} hrs`,
+          `${Math.min(((s.totalHours / DEFAULT_TARGET) * 100), 999).toFixed(1)}%`
+        ]),
+        theme: 'grid',
+        headStyles: { fillColor: [5, 150, 105], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+        bodyStyles: { fontSize: 7.5, textColor: [30, 41, 59] },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 14, right: 14 },
+      });
+
+      // Per-student DTR pages
+      for (const student of students) {
+        const res = await axios.get(`${API_URL}/admin/users/${student._id}/records`, { headers: authHeader() });
+        doc.addPage();
+        buildDTRPdf(doc, student, res.data, 14);
+      }
+
+      doc.save(`OJT_Combined_DTR_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch { /* silent */ } finally {
+      setExportingAll(false);
+    }
+  };
+
+  // Filtered students
+  const filteredStudents = students.filter(s =>
+    (s.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (s.email || '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  const navItems = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'students', label: 'Students', icon: Users },
+    { id: 'reports', label: 'Reports', icon: FileText },
+  ];
+
+  // ─── Sub-renders ─────────────────────────────────────────────────────────────
+  const renderStats = () => (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {[
+        { label: 'Total Students', value: stats?.totalStudents ?? '—', icon: Users, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/40' },
+        { label: 'Combined Duty Hours', value: stats ? `${stats.totalHours} hrs` : '—', icon: Clock, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-950/40' },
+        { label: 'Avg Hours / Student', value: stats ? `${stats.avgHoursPerStudent} hrs` : '—', icon: TrendingUp, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-950/40' },
+        { label: 'Active This Month', value: stats?.activeThisMonth ?? '—', icon: Activity, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40' },
+      ].map(({ label, value, icon: Icon, color, bg }) => (
+        <div key={label} className="bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+          <div className={`w-11 h-11 ${bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
+            <Icon className={`w-5 h-5 ${color}`} />
+          </div>
+          <div>
+            <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-0.5">{label}</p>
+            <p className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">{value}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderStudentTable = (list) => (
+    <div className="bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl shadow-sm overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 dark:border-slate-800/70">
+              <th className="text-left px-5 py-4 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Student</th>
+              <th className="text-left px-5 py-4 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest hidden md:table-cell">Rank</th>
+              <th className="text-left px-5 py-4 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Progress</th>
+              <th className="text-left px-5 py-4 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest hidden lg:table-cell">Last Active</th>
+              <th className="px-5 py-4 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.length === 0 && (
+              <tr><td colSpan={5} className="text-center py-12 text-slate-400 dark:text-slate-500 text-sm font-medium">No students found.</td></tr>
+            )}
+            {list.map(student => {
+              const pct = Math.min((student.totalHours / DEFAULT_TARGET) * 100, 100);
+              const rank = getRankBadge(pct);
+              const RankIcon = rank.icon;
+              return (
+                <tr key={student._id} className="border-b border-slate-50 dark:border-slate-800/40 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
+                  {/* Student */}
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      {student.picture ? (
+                        <img src={student.picture} alt={student.name} className="w-9 h-9 rounded-xl object-cover ring-2 ring-slate-100 dark:ring-slate-800 flex-shrink-0" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center flex-shrink-0">
+                          <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-extrabold text-slate-900 dark:text-white text-sm">{student.name || 'Unknown'}</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[160px]">{student.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  {/* Rank */}
+                  <td className="px-5 py-4 hidden md:table-cell">
+                    <div className={`inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-xl text-[10px] font-extrabold ${rank.bg} ${rank.color}`}>
+                      <RankIcon className="w-3 h-3" />
+                      {rank.label}
+                    </div>
+                  </td>
+                  {/* Progress */}
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3 min-w-[140px]">
+                      <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 w-14 text-right">
+                        {student.totalHours} <span className="text-slate-400 font-medium">hrs</span>
+                      </span>
+                    </div>
+                  </td>
+                  {/* Last Active */}
+                  <td className="px-5 py-4 hidden lg:table-cell">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      {student.lastActive
+                        ? new Date(student.lastActive).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : 'No records'}
+                    </div>
+                  </td>
+                  {/* Actions */}
+                  <td className="px-5 py-4">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => openDrawer(student)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200/60 dark:border-emerald-800/50 transition-all cursor-pointer"
+                      >
+                        <Briefcase className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">View</span>
+                      </button>
+                      <button
+                        onClick={() => exportStudentPDF(student)}
+                        disabled={exportingId === student._id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        {exportingId === student._id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Download className="w-3.5 h-3.5" />}
+                        <span className="hidden sm:inline">PDF</span>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  // ─── Chart data helpers ───────────────────────────────────────────────────
+  const hoursBarData = students
+    .slice()
+    .sort((a, b) => b.totalHours - a.totalHours)
+    .slice(0, 10)
+    .map(s => ({
+      name: (s.name || 'Unknown').split(' ')[0],
+      hours: parseFloat(s.totalHours),
+    }));
+
+  const categoryDonutData = (() => {
+    const totals = {};
+    students.forEach(s => {
+      Object.entries(s.categories || {}).forEach(([cat, hrs]) => {
+        totals[cat] = (totals[cat] || 0) + hrs;
+      });
+    });
+    return Object.entries(totals).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(1)) }));
+  })();
+
+  const rankPieData = (() => {
+    const counts = { 'Overachieving Master': 0, 'OJT Specialist': 0, 'Dedicated Apprentice': 0, 'Rookie Trainee': 0 };
+    students.forEach(s => {
+      const pct = (s.totalHours / DEFAULT_TARGET) * 100;
+      const rank = pct >= 100 ? 'Overachieving Master' : pct >= 75 ? 'OJT Specialist' : pct >= 25 ? 'Dedicated Apprentice' : 'Rookie Trainee';
+      counts[rank]++;
+    });
+    return Object.entries(counts).filter(([, v]) => v > 0).map(([name, value]) => ({ name, value }));
+  })();
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 shadow-lg text-xs">
+        {label && <p className="font-extrabold text-slate-700 dark:text-slate-300 mb-1">{label}</p>}
+        {payload.map((p, i) => (
+          <p key={i} style={{ color: p.color || p.fill }} className="font-bold">
+            {p.name}: {p.value}{p.name === 'hours' || p.dataKey === 'hours' ? ' hrs' : ''}
+          </p>
+        ))}
+      </div>
+    );
+  };
+
+  const renderContent = () => {
+    if (isLoading) return null;
+    switch (activeSection) {
+      case 'overview': return (
+        <div>
+          <div className="mb-6">
+            <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Platform Overview</h2>
+            <p className="text-slate-400 dark:text-slate-500 text-sm mt-1">All registered students and combined duty hour analytics.</p>
+          </div>
+          {renderStats()}
+
+          {/* ── Charts Row ── */}
+          {students.length > 0 && (
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-8">
+
+              {/* Bar Chart — Hours per Student */}
+              <div className="xl:col-span-2 bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl p-5 shadow-sm">
+                <div className="flex items-center gap-2.5 mb-5">
+                  <div className="w-8 h-8 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl flex items-center justify-center">
+                    <BarChart3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-extrabold text-slate-900 dark:text-white">Hours per Student</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Top 10 by total duty hours logged</p>
+                  </div>
+                </div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={hoursBarData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.1)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(16,185,129,0.06)' }} />
+                    <Bar dataKey="hours" name="hours" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Donut Chart — Skill Category Breakdown */}
+              <div className="bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl p-5 shadow-sm flex flex-col">
+                <div className="flex items-center gap-2.5 mb-5">
+                  <div className="w-8 h-8 bg-purple-50 dark:bg-purple-950/40 rounded-xl flex items-center justify-center">
+                    <Code2 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-extrabold text-slate-900 dark:text-white">Skill Breakdown</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Combined category distribution</p>
+                  </div>
+                </div>
+                {categoryDonutData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie data={categoryDonutData} cx="50%" cy="45%" innerRadius={52} outerRadius={80} paddingAngle={3} dataKey="value">
+                        {categoryDonutData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '10px', fontWeight: 700 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500 text-xs font-medium">No category data yet</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Rank Distribution */}
+          {students.length > 0 && (
+            <div className="bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl p-5 shadow-sm mb-8">
+              <div className="flex items-center gap-2.5 mb-5">
+                <div className="w-8 h-8 bg-amber-50 dark:bg-amber-950/40 rounded-xl flex items-center justify-center">
+                  <Trophy className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-extrabold text-slate-900 dark:text-white">Rank Distribution</p>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Trainee achievement tier breakdown</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {[{ rank: 'Overachieving Master', icon: Crown }, { rank: 'OJT Specialist', icon: Trophy }, { rank: 'Dedicated Apprentice', icon: Medal }, { rank: 'Rookie Trainee', icon: Hand }].map(({ rank, icon: RIcon }) => {
+                  const count = rankPieData.find(r => r.name === rank)?.value || 0;
+                  const pct = students.length ? Math.round((count / students.length) * 100) : 0;
+                  return (
+                    <div key={rank} className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-700/50">
+                      <div className="flex items-center gap-2 mb-2">
+                        <RIcon className="w-4 h-4" style={{ color: RANK_COLORS[rank] }} />
+                        <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-tight">{rank}</p>
+                      </div>
+                      <p className="text-2xl font-extrabold tracking-tight" style={{ color: RANK_COLORS[rank] }}>{count}</p>
+                      <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">{pct}% of students</p>
+                      <div className="mt-2 bg-slate-200 dark:bg-slate-700 rounded-full h-1 overflow-hidden">
+                        <div className="h-1 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: RANK_COLORS[rank] }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <h3 className="text-base font-extrabold text-slate-700 dark:text-slate-200 mb-4">All Students</h3>
+          {renderStudentTable(students)}
+        </div>
+      );
+      case 'students': return (
+        <div>
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Students</h2>
+              <p className="text-slate-400 dark:text-slate-500 text-sm mt-1">{students.length} registered trainees</p>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/40 w-full sm:w-64 transition-all"
+              />
+            </div>
+          </div>
+          {renderStudentTable(filteredStudents)}
+        </div>
+      );
+      case 'reports': return (
+        <div>
+          <div className="mb-6">
+            <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Reports & PDF Export</h2>
+            <p className="text-slate-400 dark:text-slate-500 text-sm mt-1">Generate official DTR reports per student or a combined export.</p>
+          </div>
+
+          {/* Combined Export */}
+          <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl p-6 mb-6 text-white shadow-lg shadow-emerald-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-emerald-100 text-[10px] uppercase font-extrabold tracking-widest mb-1">Combined Export</p>
+              <h3 className="text-lg font-extrabold">All Students Combined DTR PDF</h3>
+              <p className="text-emerald-100 text-xs mt-1">Generates a cover page + summary table + individual DTR pages for all {students.length} students in one PDF document.</p>
+            </div>
+            <button
+              onClick={exportAllPDF}
+              disabled={exportingAll || students.length === 0}
+              className="flex items-center gap-2.5 bg-white/20 hover:bg-white/30 border border-white/30 px-5 py-3 rounded-xl font-extrabold text-sm transition-all disabled:opacity-50 cursor-pointer flex-shrink-0 backdrop-blur-sm"
+            >
+              {exportingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              {exportingAll ? 'Generating...' : 'Export All'}
+            </button>
+          </div>
+
+          {/* Per-student export */}
+          <h3 className="text-base font-extrabold text-slate-700 dark:text-slate-200 mb-4">Per-Student PDF Export</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {students.map(student => {
+              const pct = Math.min((student.totalHours / DEFAULT_TARGET) * 100, 100);
+              const rank = getRankBadge(pct);
+              const RankIcon = rank.icon;
+              return (
+                <div key={student._id} className="bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3 mb-4">
+                    {student.picture
+                      ? <img src={student.picture} alt={student.name} className="w-10 h-10 rounded-xl object-cover ring-2 ring-slate-100 dark:ring-slate-800" />
+                      : <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center"><Users className="w-5 h-5 text-emerald-500" /></div>}
+                    <div>
+                      <p className="font-extrabold text-slate-900 dark:text-white text-sm truncate">{student.name}</p>
+                      <div className={`inline-flex items-center gap-1 mt-0.5 border px-2 py-0.5 rounded-lg text-[9px] font-extrabold ${rank.bg} ${rank.color}`}>
+                        <RankIcon className="w-2.5 h-2.5" />
+                        {rank.label}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mb-3 text-xs">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">{student.totalRecords} records</span>
+                    <span className="font-extrabold text-slate-800 dark:text-slate-200">{student.totalHours} hrs</span>
+                  </div>
+                  <div className="bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden mb-4">
+                    <div className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500" style={{ width: `${pct}%` }} />
+                  </div>
+                  <button
+                    onClick={() => exportStudentPDF(student)}
+                    disabled={exportingId === student._id}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200/60 dark:border-emerald-800/50 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {exportingId === student._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                    {exportingId === student._id ? 'Generating...' : 'Export DTR PDF'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+      default: return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 font-sans flex transition-colors duration-300">
+
+      {/* ── Sidebar Overlay (mobile) ── */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* ── Sidebar ── */}
+      <aside className={`
+        fixed top-0 left-0 h-full w-64 z-40 flex flex-col
+        bg-white dark:bg-slate-900 border-r border-slate-200/70 dark:border-slate-800
+        shadow-xl shadow-slate-200/30 dark:shadow-none
+        transform transition-transform duration-300 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:relative lg:translate-x-0 lg:shadow-none lg:z-auto
+      `}>
+        {/* Sidebar Header */}
+        <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
+              <ShieldCheck className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <p className="font-extrabold text-slate-900 dark:text-white text-sm leading-none">Admin Panel</p>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest mt-0.5">v1.4.0</p>
+            </div>
+          </div>
+          <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Admin Profile Chip */}
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3">
+            {adminUser?.picture
+              ? <img src={adminUser.picture} alt={adminUser.name} className="w-9 h-9 rounded-xl object-cover ring-2 ring-emerald-200 dark:ring-emerald-800 flex-shrink-0" />
+              : <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center flex-shrink-0"><ShieldCheck className="w-4 h-4 text-emerald-600" /></div>}
+            <div className="min-w-0">
+              <p className="font-extrabold text-slate-900 dark:text-white text-xs truncate">{adminUser?.name || 'Admin'}</p>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Administrator</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Nav Items */}
+        <nav className="flex-1 p-4 space-y-1">
+          {navItems.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => { setActiveSection(id); setSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-extrabold transition-all cursor-pointer text-left ${
+                activeSection === id
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              {label}
+              {activeSection === id && <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-70" />}
+            </button>
+          ))}
+        </nav>
+
+        {/* Sidebar Footer - Logout */}
+        <div className="p-4 border-t border-slate-100 dark:border-slate-800">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-extrabold text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
+          </button>
+          <p className="text-center text-[10px] text-slate-400 dark:text-slate-600 mt-3">© 2026 OJT Tracker System</p>
+        </div>
+      </aside>
+
+      {/* ── Main Content ── */}
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
+
+        {/* Top Navbar */}
+        <header className="sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800 shadow-sm shadow-slate-100/40 dark:shadow-none flex items-center gap-4 px-5 py-4">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Open Menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="hidden lg:flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 font-medium">
+              <BarChart3 className="w-4 h-4" />
+              <span>Admin Dashboard</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-extrabold text-slate-900 dark:text-white text-sm capitalize">{activeSection}</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+              <span>{students.length} students</span>
+            </div>
+          </div>
+        </header>
+
+        {/* Page Body */}
+        <main className="flex-1 p-5 sm:p-7 overflow-x-hidden">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-32 gap-4 text-slate-400 dark:text-slate-500">
+              <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
+              <p className="font-extrabold text-sm">Loading admin dashboard...</p>
+            </div>
+          ) : renderContent()}
+        </main>
+      </div>
+
+      {/* ── Student Records Drawer ── */}
+      {drawerStudent && (
+        <>
+          <div className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-sm z-50" onClick={() => setDrawerStudent(null)} />
+          <div className="fixed top-0 right-0 h-full w-full max-w-lg bg-white dark:bg-slate-900 shadow-2xl z-50 flex flex-col animate-slide-in-right border-l border-slate-200 dark:border-slate-800">
+
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                {drawerStudent.picture
+                  ? <img src={drawerStudent.picture} alt={drawerStudent.name} className="w-10 h-10 rounded-xl object-cover ring-2 ring-slate-200 dark:ring-slate-700" />
+                  : <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center"><Users className="w-5 h-5 text-emerald-500" /></div>}
+                <div>
+                  <h3 className="font-extrabold text-slate-900 dark:text-white text-base leading-tight">{drawerStudent.name}</h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">{drawerStudent.email}</p>
+                </div>
+              </div>
+              <button onClick={() => setDrawerStudent(null)} className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Drawer Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {drawerLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+                  <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+                  <p className="text-sm font-medium">Loading records...</p>
+                </div>
+              ) : (
+                <>
+                  {/* Stat chips */}
+                  <div className="grid grid-cols-3 gap-3 mb-6">
+                    {[
+                      { label: 'Records', value: drawerStudent.totalRecords },
+                      { label: 'Total Hours', value: `${drawerStudent.totalHours}` },
+                      { label: 'Progress', value: `${Math.min((drawerStudent.totalHours / DEFAULT_TARGET) * 100, 999).toFixed(1)}%` },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 rounded-xl p-3 text-center">
+                        <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{label}</p>
+                        <p className="text-lg font-extrabold text-slate-900 dark:text-white">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Skill breakdown */}
+                  {Object.keys(drawerStudent.categories || {}).length > 0 && (
+                    <div className="mb-6">
+                      <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Skill Competency</p>
+                      <div className="space-y-2.5">
+                        {SKILL_CATEGORIES.filter(c => drawerStudent.categories?.[c.id]).map(cat => {
+                          const hrs = drawerStudent.categories[cat.id] || 0;
+                          const catPct = drawerStudent.totalHours > 0 ? (hrs / drawerStudent.totalHours) * 100 : 0;
+                          const Icon = cat.icon;
+                          return (
+                            <div key={cat.id}>
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400">
+                                  <Icon className="w-3 h-3" />
+                                  {cat.label}
+                                </div>
+                                <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400">{parseFloat(hrs).toFixed(1)} hrs</span>
+                              </div>
+                              <div className="bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                <div className={`h-1.5 rounded-full bg-gradient-to-r ${cat.bar} transition-all`} style={{ width: `${catPct}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Records table */}
+                  <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Duty Log Records</p>
+                  {drawerRecords.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400 dark:text-slate-500 text-sm font-medium">No records logged yet.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {drawerRecords.map(r => (
+                        <div key={r._id} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50 rounded-xl p-4 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                              {new Date(r.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                            </p>
+                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{r.startTime} — {r.endTime} {r.category ? `· ${r.category}` : ''}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">{parseFloat(r.totalHours).toFixed(2)} hrs</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="flex-shrink-0 p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20">
+              <button
+                onClick={() => exportStudentPDF(drawerStudent)}
+                disabled={exportingId === drawerStudent._id}
+                className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl font-extrabold text-xs uppercase tracking-widest text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/10 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {exportingId === drawerStudent._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                {exportingId === drawerStudent._id ? 'Generating PDF...' : 'Export This Student DTR PDF'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

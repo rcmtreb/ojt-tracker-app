@@ -204,6 +204,98 @@ app.delete('/api/records/:id', verifyToken, async (req, res) => {
     }
 });
 
+// ─── Admin Middleware ────────────────────────────────────────────────────────
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
+
+const verifyAdmin = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'No token provided' });
+    }
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = await User.findById(decoded.userId);
+        if (!user || user.email !== ADMIN_EMAIL) {
+            return res.status(403).json({ message: 'Admin access only' });
+        }
+        req.userId = decoded.userId;
+        req.adminUser = user;
+        next();
+    } catch {
+        return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+};
+
+// ─── Admin Routes ────────────────────────────────────────────────────────────
+
+// GET /api/admin/stats — Aggregate platform statistics
+app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
+    try {
+        const users = await User.find({});
+        const allRecords = await Record.find({});
+        const totalHours = allRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+        const recentUserIds = new Set(
+            allRecords
+                .filter(r => new Date(r.date) >= thirtyDaysAgo)
+                .map(r => r.userId.toString())
+        );
+
+        res.json({
+            totalStudents: users.length,
+            totalRecords: allRecords.length,
+            totalHours: parseFloat(totalHours.toFixed(2)),
+            avgHoursPerStudent: users.length ? parseFloat((totalHours / users.length).toFixed(2)) : 0,
+            activeThisMonth: recentUserIds.size
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET /api/admin/users — All students with per-student summary
+app.get('/api/admin/users', verifyAdmin, async (req, res) => {
+    try {
+        const users = await User.find({});
+        const summaries = await Promise.all(users.map(async (u) => {
+            const records = await Record.find({ userId: u._id }).sort({ date: -1 });
+            const totalHours = records.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+            const categories = {};
+            records.forEach(r => {
+                if (r.category) {
+                    categories[r.category] = (categories[r.category] || 0) + (r.totalHours || 0);
+                }
+            });
+            return {
+                _id: u._id,
+                name: u.name,
+                email: u.email,
+                picture: u.picture,
+                totalRecords: records.length,
+                totalHours: parseFloat(totalHours.toFixed(2)),
+                lastActive: records.length ? records[0].date : null,
+                categories
+            };
+        }));
+        res.json(summaries);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET /api/admin/users/:id/records — All records for a specific student
+app.get('/api/admin/users/:id/records', verifyAdmin, async (req, res) => {
+    try {
+        const records = await Record.find({ userId: req.params.id }).sort({ date: 1 });
+        res.json(records);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
