@@ -50,8 +50,11 @@ const userSchema = new mongoose.Schema({
     googleId: { type: String, required: true, unique: true },
     name: String,
     email: String,
-    picture: String
+    picture: String,
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null }
 });
+userSchema.index({ deletedAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
 const User = mongoose.model('User', userSchema);
 
 const recordSchema = new mongoose.Schema({
@@ -64,8 +67,11 @@ const recordSchema = new mongoose.Schema({
     totalHours: Number,
     taskDescription: String,
     category: { type: String, default: 'Development' },
-    documentaryUrls: [String]
+    documentaryUrls: [String],
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null }
 });
+recordSchema.index({ deletedAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
 const Record = mongoose.model('Record', recordSchema);
 
 // Auth Middleware
@@ -96,6 +102,10 @@ app.post('/api/auth/google', async (req, res) => {
         const { sub: googleId, name, email, picture } = payload;
 
         let user = await User.findOne({ googleId });
+        if (user && user.isDeleted) {
+            return res.status(403).json({ message: 'This account has been deleted. Please contact your administrator if you need to restore it.' });
+        }
+
         if (!user) {
             user = new User({ googleId, name, email, picture });
             await user.save();
@@ -112,7 +122,7 @@ app.post('/api/auth/google', async (req, res) => {
 // Records Routes
 app.get('/api/records', verifyToken, async (req, res) => {
     try {
-        const records = await Record.find({ userId: req.userId }).sort({ date: -1 });
+        const records = await Record.find({ userId: req.userId, isDeleted: { $ne: true } }).sort({ date: -1 });
         res.json(records);
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -233,8 +243,8 @@ const verifyAdmin = async (req, res, next) => {
 // GET /api/admin/stats — Aggregate platform statistics
 app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
     try {
-        const users = await User.find({});
-        const allRecords = await Record.find({});
+        const users = await User.find({ isDeleted: { $ne: true }, email: { $ne: ADMIN_EMAIL } });
+        const allRecords = await Record.find({ isDeleted: { $ne: true } });
         const totalHours = allRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
 
         const now = new Date();
@@ -257,12 +267,12 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
     }
 });
 
-// GET /api/admin/users — All students with per-student summary
+// GET /api/admin/users — All active students with per-student summary
 app.get('/api/admin/users', verifyAdmin, async (req, res) => {
     try {
-        const users = await User.find({});
+        const users = await User.find({ isDeleted: { $ne: true }, email: { $ne: ADMIN_EMAIL } });
         const summaries = await Promise.all(users.map(async (u) => {
-            const records = await Record.find({ userId: u._id }).sort({ date: -1 });
+            const records = await Record.find({ userId: u._id, isDeleted: { $ne: true } }).sort({ date: -1 });
             const totalHours = records.reduce((sum, r) => sum + (r.totalHours || 0), 0);
             const categories = {};
             records.forEach(r => {
@@ -287,11 +297,84 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
     }
 });
 
+// GET /api/admin/users/archived — List all soft-deleted students within 30-day grace period
+app.get('/api/admin/users/archived', verifyAdmin, async (req, res) => {
+    try {
+        const users = await User.find({ isDeleted: true, email: { $ne: ADMIN_EMAIL } });
+        const summaries = await Promise.all(users.map(async (u) => {
+            const records = await Record.find({ userId: u._id });
+            const totalHours = records.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+            return {
+                _id: u._id,
+                name: u.name,
+                email: u.email,
+                picture: u.picture,
+                deletedAt: u.deletedAt,
+                totalRecords: records.length,
+                totalHours: parseFloat(totalHours.toFixed(2))
+            };
+        }));
+        res.json(summaries);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // GET /api/admin/users/:id/records — All records for a specific student
 app.get('/api/admin/users/:id/records', verifyAdmin, async (req, res) => {
     try {
-        const records = await Record.find({ userId: req.params.id }).sort({ date: 1 });
+        const records = await Record.find({ userId: req.params.id, isDeleted: { $ne: true } }).sort({ date: 1 });
         res.json(records);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// DELETE /api/admin/users/:id — Soft-delete a student account and their records
+app.delete('/api/admin/users/:id', verifyAdmin, async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const targetUser = await User.findById(userId);
+        if (!targetUser) {
+            return res.status(404).json({ message: 'Student not found' });
+        }
+        if (targetUser.email === ADMIN_EMAIL) {
+            return res.status(400).json({ message: 'The Admin account cannot be deleted.' });
+        }
+
+        const now = new Date();
+        const user = await User.findByIdAndUpdate(
+            userId,
+            { isDeleted: true, deletedAt: now },
+            { new: true }
+        );
+        await Record.updateMany(
+            { userId },
+            { isDeleted: true, deletedAt: now }
+        );
+        res.json({ message: 'Student account moved to trash. Automatically purged in 30 days unless restored.', userId });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// PATCH /api/admin/users/:id/restore — Retrieve / Restore a soft-deleted student account
+app.patch('/api/admin/users/:id/restore', verifyAdmin, async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const user = await User.findByIdAndUpdate(
+            userId,
+            { isDeleted: false, deletedAt: null },
+            { new: true }
+        );
+        if (!user) {
+            return res.status(404).json({ message: 'Student not found' });
+        }
+        await Record.updateMany(
+            { userId },
+            { isDeleted: false, deletedAt: null }
+        );
+        res.json({ message: 'Student account and records successfully restored!', user });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

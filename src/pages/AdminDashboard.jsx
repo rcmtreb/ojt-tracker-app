@@ -8,7 +8,7 @@ import {
   ShieldCheck, Clock, TrendingUp, Activity, Search,
   ChevronRight, Medal, Trophy, Crown, Briefcase,
   Code2, Palette, Wrench, ClipboardList, Download, Loader2,
-  Calendar, BarChart3, Hand
+  Calendar, BarChart3, Hand, RotateCcw, Trash2, Archive, AlertTriangle, CheckCircle2
 } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -125,6 +125,11 @@ export default function AdminDashboard() {
   const [activeSection, setActiveSection] = useState('overview');
   const [stats, setStats] = useState(null);
   const [students, setStudents] = useState([]);
+  const [archivedStudents, setArchivedStudents] = useState([]);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [restoringId, setRestoringId] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [drawerStudent, setDrawerStudent] = useState(null);
@@ -154,12 +159,14 @@ export default function AdminDashboard() {
     const fetchAll = async () => {
       setIsLoading(true);
       try {
-        const [statsRes, usersRes] = await Promise.all([
+        const [statsRes, usersRes, archivedRes] = await Promise.all([
           axios.get(`${API_URL}/admin/stats`, { headers: authHeader() }),
           axios.get(`${API_URL}/admin/users`, { headers: authHeader() }),
+          axios.get(`${API_URL}/admin/users/archived`, { headers: authHeader() }),
         ]);
         setStats(statsRes.data);
         setStudents(usersRes.data);
+        setArchivedStudents(archivedRes.data);
       } catch (err) {
         if (err.response?.status === 401 || err.response?.status === 403) handleLogout();
       } finally {
@@ -168,6 +175,51 @@ export default function AdminDashboard() {
     };
     fetchAll();
   }, [authHeader, handleLogout, navigate]);
+
+  const handleSoftDelete = async (student) => {
+    if (!student) return;
+    setIsDeleting(true);
+    try {
+      await axios.delete(`${API_URL}/admin/users/${student._id}`, { headers: authHeader() });
+      setUserToDelete(null);
+      if (drawerStudent?._id === student._id) setDrawerStudent(null);
+      setToastMessage({ type: 'success', text: `${student.name || 'Account'} moved to trash. Automatically purged in 30 days unless restored.` });
+
+      const [statsRes, usersRes, archivedRes] = await Promise.all([
+        axios.get(`${API_URL}/admin/stats`, { headers: authHeader() }),
+        axios.get(`${API_URL}/admin/users`, { headers: authHeader() }),
+        axios.get(`${API_URL}/admin/users/archived`, { headers: authHeader() })
+      ]);
+      setStats(statsRes.data);
+      setStudents(usersRes.data);
+      setArchivedStudents(archivedRes.data);
+    } catch (err) {
+      setToastMessage({ type: 'error', text: err.response?.data?.message || 'Failed to delete student account.' });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleRestore = async (student) => {
+    setRestoringId(student._id);
+    try {
+      await axios.patch(`${API_URL}/admin/users/${student._id}/restore`, {}, { headers: authHeader() });
+      setToastMessage({ type: 'success', text: `${student.name || 'Account'} and all records successfully restored!` });
+
+      const [statsRes, usersRes, archivedRes] = await Promise.all([
+        axios.get(`${API_URL}/admin/stats`, { headers: authHeader() }),
+        axios.get(`${API_URL}/admin/users`, { headers: authHeader() }),
+        axios.get(`${API_URL}/admin/users/archived`, { headers: authHeader() })
+      ]);
+      setStats(statsRes.data);
+      setStudents(usersRes.data);
+      setArchivedStudents(archivedRes.data);
+    } catch (err) {
+      setToastMessage({ type: 'error', text: err.response?.data?.message || 'Failed to restore student account.' });
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   // Open student drawer
   const openDrawer = async (student) => {
@@ -263,6 +315,7 @@ export default function AdminDashboard() {
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'students', label: 'Students', icon: Users },
     { id: 'reports', label: 'Reports', icon: FileText },
+    { id: 'trash', label: `Trash / Archived (${archivedStudents.length})`, icon: Archive },
   ];
 
   // ─── Sub-renders ─────────────────────────────────────────────────────────────
@@ -375,6 +428,14 @@ export default function AdminDashboard() {
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           : <Download className="w-3.5 h-3.5" />}
                         <span className="hidden sm:inline">PDF</span>
+                      </button>
+                      <button
+                        onClick={() => setUserToDelete(student)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200/60 dark:border-red-800/50 transition-all cursor-pointer"
+                        title="Move Account to Trash"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Delete</span>
                       </button>
                     </div>
                   </td>
@@ -612,12 +673,85 @@ export default function AdminDashboard() {
                     disabled={exportingId === student._id}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200/60 dark:border-emerald-800/50 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    {exportingId === student._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                    {exportingId === student._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                     {exportingId === student._id ? 'Generating...' : 'Export DTR PDF'}
                   </button>
                 </div>
               );
             })}
+          </div>
+        </div>
+      );
+      case 'trash': return (
+        <div>
+          <div className="mb-6">
+            <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Trash / Archived Accounts</h2>
+            <p className="text-slate-400 dark:text-slate-500 text-sm mt-1">Deleted accounts remain accessible for 30 days before MongoDB automatically purges them permanently. You can restore them anytime during this grace period.</p>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800/70">
+                    <th className="text-left px-5 py-4 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Student</th>
+                    <th className="text-left px-5 py-4 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest hidden md:table-cell">Deleted Date</th>
+                    <th className="text-left px-5 py-4 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Grace Period</th>
+                    <th className="px-5 py-4 text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {archivedStudents.length === 0 && (
+                    <tr><td colSpan={4} className="text-center py-12 text-slate-400 dark:text-slate-500 text-sm font-medium">Trash is empty. No deleted accounts found.</td></tr>
+                  )}
+                  {archivedStudents.map(student => {
+                    const deletedDate = student.deletedAt ? new Date(student.deletedAt) : new Date();
+                    const daysPassed = Math.floor((new Date() - deletedDate) / (1000 * 60 * 60 * 24));
+                    const daysRemaining = Math.max(0, 30 - daysPassed);
+                    return (
+                      <tr key={student._id} className="border-b border-slate-50 dark:border-slate-800/40 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            {student.picture ? (
+                              <img src={student.picture} alt={student.name} className="w-9 h-9 rounded-xl object-cover ring-2 ring-slate-100 dark:ring-slate-800 flex-shrink-0" />
+                            ) : (
+                              <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+                                <Users className="w-4 h-4 text-slate-500" />
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-extrabold text-slate-900 dark:text-white text-sm">{student.name || 'Unknown'}</p>
+                              <p className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[160px]">{student.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 hidden md:table-cell text-xs text-slate-500 dark:text-slate-400 font-medium">
+                          {deletedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-extrabold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
+                            <Clock className="w-3 h-3" />
+                            Purges in {daysRemaining} days
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleRestore(student)}
+                              disabled={restoringId === student._id}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200/60 dark:border-emerald-800/50 transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              {restoringId === student._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                              <span>Restore Account</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       );
@@ -844,7 +978,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Drawer Footer */}
-            <div className="flex-shrink-0 p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20">
+            <div className="flex-shrink-0 p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex flex-col gap-2">
               <button
                 onClick={() => exportStudentPDF(drawerStudent)}
                 disabled={exportingId === drawerStudent._id}
@@ -853,9 +987,73 @@ export default function AdminDashboard() {
                 {exportingId === drawerStudent._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                 {exportingId === drawerStudent._id ? 'Generating PDF...' : 'Export This Student DTR PDF'}
               </button>
+              <button
+                onClick={() => setUserToDelete(drawerStudent)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-extrabold text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200/60 dark:border-red-800/50 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Move Account to Trash</span>
+              </button>
             </div>
           </div>
         </>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {userToDelete && (
+        <div className="fixed inset-0 bg-slate-900/50 dark:bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-400 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800/50 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-lg text-slate-900 dark:text-white">Move Account to Trash?</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500">Student Account Deletion</p>
+              </div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 mb-4 border border-slate-100 dark:border-slate-800">
+              <p className="font-bold text-slate-900 dark:text-white text-sm">{userToDelete.name}</p>
+              <p className="text-xs text-slate-400 mb-2">{userToDelete.email}</p>
+              <div className="flex gap-4 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                <span>Logged Records: <strong>{userToDelete.totalRecords}</strong></span>
+                <span>Total Hours: <strong>{userToDelete.totalHours} hrs</strong></span>
+              </div>
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl p-3.5 text-xs text-amber-800 dark:text-amber-300 mb-6">
+              <p className="font-bold mb-1 flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> 30-Day Retrieval Grace Period</p>
+              This account will be hidden immediately. You can retrieve and restore it anytime within 30 days from the <strong>Trash</strong> section before MongoDB purges it permanently.
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setUserToDelete(null)}
+                disabled={isDeleting}
+                className="px-4 py-2.5 rounded-xl font-extrabold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSoftDelete(userToDelete)}
+                disabled={isDeleting}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-extrabold text-xs text-white bg-red-600 hover:bg-red-700 shadow-md shadow-red-500/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {isDeleting ? 'Deleting...' : 'Move to Trash'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl bg-slate-900 text-white shadow-2xl border border-slate-700 animate-slide-in-right">
+          {toastMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-red-400" />}
+          <span className="text-xs font-semibold">{toastMessage.text}</span>
+          <button onClick={() => setToastMessage(null)} className="ml-2 text-slate-400 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
     </div>
   );
