@@ -4,7 +4,8 @@ import { GoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import { ShieldCheck, AlertTriangle, Clock } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { API_URL } from '../config';
+
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'ojttrackerapp@gmail.com';
 
 export default function AdminLogin() {

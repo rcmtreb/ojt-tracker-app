@@ -25,9 +25,7 @@ const getCategoryIcon = (iconName, className = "w-4 h-4") => {
   }
 };
 
-const VITE_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const API_URL = `${VITE_API_URL}/api`;
-const BASE_URL = VITE_API_URL;
+import { API_URL, BASE_URL } from '../config';
 
 function Dashboard() {
   const navigate = useNavigate();

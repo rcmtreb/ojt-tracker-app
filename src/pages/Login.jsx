@@ -4,8 +4,7 @@ import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { Clock, ShieldCheck, CheckCircle, AlertTriangle, Sun, Moon } from 'lucide-react';
 
-const VITE_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const API_URL = `${VITE_API_URL}/api`;
+import { API_URL } from '../config';
 
 function Login() {
   const navigate = useNavigate();
