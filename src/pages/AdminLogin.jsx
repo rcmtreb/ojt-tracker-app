@@ -38,8 +38,9 @@ export default function AdminLogin() {
       localStorage.setItem('admin_token', token);
       localStorage.setItem('admin_user', JSON.stringify(user));
       navigate('/admin', { replace: true });
-    } catch {
-      setError('Authentication failed. Please try again.');
+    } catch (err) {
+      console.error('Admin login error:', err);
+      setError(err.response?.data?.message || err.message || 'Authentication failed. Please try again.');
     } finally {
       setIsLoading(false);
     }

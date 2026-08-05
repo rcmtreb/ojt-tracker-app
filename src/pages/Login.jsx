@@ -65,7 +65,7 @@ function Login() {
       navigate('/dashboard');
     } catch (err) {
       console.error('Login Error:', err);
-      setError('Login failed. Please try again.');
+      setError(err.response?.data?.message || err.message || 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
