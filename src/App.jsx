@@ -10,7 +10,7 @@ import NotFound from './pages/NotFound';
 // NOTE: You must create a project in Google Cloud Console, 
 // enable Google People API, and get a Client ID.
 const GOOGLE_CLIENT_ID = "1021240931407-d22o1pbm1c10jpsor4qc2irfmu66fmel.apps.googleusercontent.com";
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || '';
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'ojttrackerapp@gmail.com';
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');

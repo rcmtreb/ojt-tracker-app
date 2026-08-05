@@ -5,7 +5,7 @@ import axios from 'axios';
 import { ShieldCheck, AlertTriangle, Clock } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || '';
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'ojttrackerapp@gmail.com';
 
 export default function AdminLogin() {
   const navigate = useNavigate();

@@ -11,7 +11,8 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '1021240931407-d22o1pbm1c10jpsor4qc2irfmu66fmel.apps.googleusercontent.com';
+const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Ensure uploads directory exists
 const uploadDir = path.join(__dirname, 'uploads');
@@ -89,7 +90,7 @@ app.post('/api/auth/google', async (req, res) => {
     try {
         const ticket = await client.verifyIdToken({
             idToken: credential,
-            audience: process.env.GOOGLE_CLIENT_ID
+            audience: GOOGLE_CLIENT_ID
         });
         const payload = ticket.getPayload();
         const { sub: googleId, name, email, picture } = payload;
@@ -205,7 +206,7 @@ app.delete('/api/records/:id', verifyToken, async (req, res) => {
 });
 
 // ─── Admin Middleware ────────────────────────────────────────────────────────
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'ojttrackerapp@gmail.com';
 
 const verifyAdmin = async (req, res, next) => {
     const authHeader = req.headers.authorization;

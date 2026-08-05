@@ -16,7 +16,7 @@ import {
 } from 'recharts';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || '';
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'ojttrackerapp@gmail.com';
 const DEFAULT_TARGET = 486;
 
 const CHART_COLORS = ['#10b981', '#14b8a6', '#a855f7', '#f59e0b', '#64748b'];
