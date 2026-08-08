@@ -52,6 +52,14 @@ const userSchema = new mongoose.Schema({
     email: String,
     picture: String,
     targetHours: { type: Number, default: 486 },
+    companyName: { type: String, default: '' },
+    department: { type: String, default: '' },
+    supervisorName: { type: String, default: '' },
+    courseProgram: { type: String, default: '' },
+    defaultStartTime: { type: String, default: '08:00' },
+    defaultEndTime: { type: String, default: '17:00' },
+    defaultBreakDuration: { type: Number, default: 60 },
+    includeSignatureBlock: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null }
 });
@@ -120,6 +128,17 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
 
+// GET /api/user/profile — Fetch current user profile & settings
+app.get('/api/user/profile', verifyToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+        res.json(user);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // User Target Sync Route
 app.patch('/api/user/target', verifyToken, async (req, res) => {
     try {
@@ -137,6 +156,41 @@ app.patch('/api/user/target', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
         res.json({ message: 'Target hours updated', user });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// User Full Settings Route
+app.patch('/api/user/settings', verifyToken, async (req, res) => {
+    try {
+        const allowed = [
+            'targetHours', 'companyName', 'department', 'supervisorName',
+            'courseProgram', 'defaultStartTime', 'defaultEndTime',
+            'defaultBreakDuration', 'includeSignatureBlock'
+        ];
+        const updateData = {};
+        allowed.forEach(field => {
+            if (req.body[field] !== undefined) {
+                updateData[field] = req.body[field];
+            }
+        });
+        if (updateData.targetHours !== undefined) {
+            updateData.targetHours = parseFloat(updateData.targetHours) || 486;
+        }
+        if (updateData.defaultBreakDuration !== undefined) {
+            updateData.defaultBreakDuration = parseInt(updateData.defaultBreakDuration) || 0;
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.userId,
+            updateData,
+            { new: true }
+        );
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.json({ message: 'Settings saved successfully', user });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -293,9 +347,9 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
 // GET /api/admin/users — All active students with per-student summary
 app.get('/api/admin/users', verifyAdmin, async (req, res) => {
     try {
-        const users = await User.find({ isDeleted: { $ne: true }, email: { $ne: ADMIN_EMAIL } });
+        const users = await User.find({ isDeleted: { $ne: true }, email: { $ne: ADMIN_EMAIL } }).lean();
         const summaries = await Promise.all(users.map(async (u) => {
-            const records = await Record.find({ userId: u._id, isDeleted: { $ne: true } }).sort({ date: -1 });
+            const records = await Record.find({ userId: u._id, isDeleted: { $ne: true } }).sort({ date: -1 }).lean();
             const totalHours = records.reduce((sum, r) => sum + (r.totalHours || 0), 0);
             const categories = {};
             records.forEach(r => {
@@ -309,6 +363,10 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
                 email: u.email,
                 picture: u.picture,
                 targetHours: u.targetHours || 486,
+                companyName: u.companyName || '',
+                department: u.department || '',
+                supervisorName: u.supervisorName || '',
+                courseProgram: u.courseProgram || '',
                 totalRecords: records.length,
                 totalHours: parseFloat(totalHours.toFixed(2)),
                 lastActive: records.length ? records[0].date : null,
@@ -324,9 +382,9 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
 // GET /api/admin/users/archived — List all soft-deleted students within 30-day grace period
 app.get('/api/admin/users/archived', verifyAdmin, async (req, res) => {
     try {
-        const users = await User.find({ isDeleted: true, email: { $ne: ADMIN_EMAIL } });
+        const users = await User.find({ isDeleted: true, email: { $ne: ADMIN_EMAIL } }).lean();
         const summaries = await Promise.all(users.map(async (u) => {
-            const records = await Record.find({ userId: u._id });
+            const records = await Record.find({ userId: u._id }).lean();
             const totalHours = records.reduce((sum, r) => sum + (r.totalHours || 0), 0);
             return {
                 _id: u._id,
@@ -334,6 +392,10 @@ app.get('/api/admin/users/archived', verifyAdmin, async (req, res) => {
                 email: u.email,
                 picture: u.picture,
                 targetHours: u.targetHours || 486,
+                companyName: u.companyName || '',
+                department: u.department || '',
+                supervisorName: u.supervisorName || '',
+                courseProgram: u.courseProgram || '',
                 deletedAt: u.deletedAt,
                 totalRecords: records.length,
                 totalHours: parseFloat(totalHours.toFixed(2))

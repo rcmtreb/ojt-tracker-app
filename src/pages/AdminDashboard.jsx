@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { jsPDF } from 'jspdf';
@@ -6,9 +6,9 @@ import autoTable from 'jspdf-autotable';
 import {
   LayoutDashboard, Users, FileText, LogOut, Menu, X,
   ShieldCheck, Clock, TrendingUp, Activity, Search,
-  ChevronRight, Medal, Trophy, Crown, Briefcase,
+  ChevronRight, ChevronLeft, Medal, Trophy, Crown, Briefcase,
   Code2, Palette, Wrench, ClipboardList, Download, Loader2,
-  Calendar, BarChart3, Hand, RotateCcw, Trash2, Archive, AlertTriangle, CheckCircle2, Pencil
+  Calendar, BarChart3, Hand, RotateCcw, Trash2, Archive, AlertTriangle, CheckCircle2, Pencil, Building2, GraduationCap
 } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -140,6 +140,8 @@ export default function AdminDashboard() {
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [exportingId, setExportingId] = useState(null);
   const [exportingAll, setExportingAll] = useState(false);
+  const [studentPage, setStudentPage] = useState(1);
+  const [drawerPage, setDrawerPage] = useState(1);
 
   const authHeader = useCallback(() => ({
     Authorization: `Bearer ${localStorage.getItem('admin_token')}`
@@ -252,6 +254,7 @@ export default function AdminDashboard() {
   const openDrawer = async (student) => {
     setDrawerStudent(student);
     setDrawerRecords([]);
+    setDrawerPage(1);
     setDrawerLoading(true);
     try {
       const res = await axios.get(`${API_URL}/admin/users/${student._id}/records`, { headers: authHeader() });
@@ -332,11 +335,28 @@ export default function AdminDashboard() {
     }
   };
 
-  // Filtered students
-  const filteredStudents = students.filter(s =>
-    (s.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (s.email || '').toLowerCase().includes(search.toLowerCase())
-  );
+  // Filtered students (searches Name, Email, Company, Course)
+  const STUDENTS_PER_PAGE = 6;
+  const filteredStudents = useMemo(() => {
+    return students.filter(s =>
+      (s.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.email || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.courseProgram || '').toLowerCase().includes(search.toLowerCase())
+    );
+  }, [students, search]);
+
+  const totalStudentPages = Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE) || 1;
+  const paginatedStudents = useMemo(() => {
+    const start = (studentPage - 1) * STUDENTS_PER_PAGE;
+    return filteredStudents.slice(start, start + STUDENTS_PER_PAGE);
+  }, [filteredStudents, studentPage]);
+
+  // Reset student page on search change
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStudentPage(1);
+  }, [search]);
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -391,7 +411,6 @@ export default function AdminDashboard() {
               const RankIcon = rank.icon;
               return (
                 <tr key={student._id} className="border-b border-slate-50 dark:border-slate-800/40 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
-                  {/* Student */}
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
                       {student.picture ? (
@@ -407,28 +426,22 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   </td>
-                  {/* Rank */}
                   <td className="px-5 py-4 hidden md:table-cell">
                     <div className={`inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-xl text-[10px] font-extrabold ${rank.bg} ${rank.color}`}>
                       <RankIcon className="w-3 h-3" />
                       {rank.label}
                     </div>
                   </td>
-                  {/* Progress */}
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3 min-w-[160px]">
                       <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
-                          style={{ width: `${pct}%` }}
-                        />
+                        <div className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500" style={{ width: `${pct}%` }} />
                       </div>
                       <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 min-w-[70px] text-right">
                         {student.totalHours} <span className="text-slate-400 font-medium">/ {target}h</span>
                       </span>
                     </div>
                   </td>
-                  {/* Last Active */}
                   <td className="px-5 py-4 hidden lg:table-cell">
                     <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
@@ -437,7 +450,6 @@ export default function AdminDashboard() {
                         : 'No records'}
                     </div>
                   </td>
-                  {/* Actions */}
                   <td className="px-5 py-4">
                     <div className="flex items-center justify-end gap-2">
                       <button
@@ -452,9 +464,7 @@ export default function AdminDashboard() {
                         disabled={exportingId === student._id}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer disabled:opacity-50"
                       >
-                        {exportingId === student._id
-                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          : <Download className="w-3.5 h-3.5" />}
+                        {exportingId === student._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                         <span className="hidden sm:inline">PDF</span>
                       </button>
                       <button
@@ -475,6 +485,190 @@ export default function AdminDashboard() {
       </div>
     </div>
   );
+
+  const renderStudentCards = (list, currentPage, totalPages, totalCount, onPageChange) => {
+    const startIdx = (currentPage - 1) * STUDENTS_PER_PAGE;
+    const endIdx = Math.min(startIdx + STUDENTS_PER_PAGE, totalCount);
+
+    return (
+      <div className="space-y-6">
+        {totalCount === 0 ? (
+          <div className="bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl p-12 text-center text-slate-400 dark:text-slate-500 font-medium">
+            No student profiles match your search criteria.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {list.map(student => {
+                const target = student.targetHours || 486;
+                const pct = Math.min((student.totalHours / target) * 100, 100);
+                const rank = getRankBadge(pct);
+                const RankIcon = rank.icon;
+
+                return (
+                  <div key={student._id} className="bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+                    <div>
+                      {/* Header: Student Info & Rank */}
+                      <div className="flex items-start justify-between gap-3 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800/80">
+                        <div className="flex items-center gap-3.5">
+                          {student.picture ? (
+                            <img src={student.picture} alt={student.name} className="w-12 h-12 rounded-2xl object-cover ring-2 ring-slate-100 dark:ring-slate-800 flex-shrink-0" />
+                          ) : (
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center flex-shrink-0">
+                              <Users className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                          )}
+                          <div>
+                            <h3 className="font-extrabold text-slate-900 dark:text-white text-base leading-tight">{student.name || 'Unknown Student'}</h3>
+                            <p className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[200px] mt-0.5">{student.email}</p>
+                          </div>
+                        </div>
+
+                        <div className={`inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-xl text-[10px] font-extrabold flex-shrink-0 ${rank.bg} ${rank.color}`}>
+                          <RankIcon className="w-3.5 h-3.5" />
+                          <span>{rank.label}</span>
+                        </div>
+                      </div>
+
+                      {/* Internship & Academic Info Grid */}
+                      <div className="grid grid-cols-2 gap-3 mb-5">
+                        <div className="bg-slate-50/80 dark:bg-slate-800/40 rounded-xl p-3 border border-slate-100 dark:border-slate-800/60">
+                          <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">
+                            <Building2 className="w-3 h-3 text-emerald-500" />
+                            <span>Company / HTE</span>
+                          </div>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{student.companyName || 'Not configured'}</p>
+                        </div>
+
+                        <div className="bg-slate-50/80 dark:bg-slate-800/40 rounded-xl p-3 border border-slate-100 dark:border-slate-800/60">
+                          <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">
+                            <GraduationCap className="w-3 h-3 text-purple-500" />
+                            <span>Course & Year</span>
+                          </div>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{student.courseProgram || 'Not configured'}</p>
+                        </div>
+
+                        <div className="bg-slate-50/80 dark:bg-slate-800/40 rounded-xl p-3 border border-slate-100 dark:border-slate-800/60">
+                          <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">
+                            <Briefcase className="w-3 h-3 text-teal-500" />
+                            <span>Department</span>
+                          </div>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{student.department || 'Not configured'}</p>
+                        </div>
+
+                        <div className="bg-slate-50/80 dark:bg-slate-800/40 rounded-xl p-3 border border-slate-100 dark:border-slate-800/60">
+                          <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">
+                            <Users className="w-3 h-3 text-amber-500" />
+                            <span>Supervisor</span>
+                          </div>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{student.supervisorName || 'Not configured'}</p>
+                        </div>
+                      </div>
+
+                      {/* Duty Hours & Responsive Progress */}
+                      <div className="mb-5 bg-slate-50/50 dark:bg-slate-800/30 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/60">
+                        <div className="flex items-center justify-between text-xs font-extrabold mb-1.5">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{student.totalRecords} duty records</span>
+                          <span className="text-slate-900 dark:text-white">{student.totalHours} / {target} hrs <span className="text-emerald-600 dark:text-emerald-400">({pct.toFixed(1)}%)</span></span>
+                        </div>
+                        <div className="bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden mb-2">
+                          <div className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+                          <span>Last Active: {student.lastActive ? new Date(student.lastActive).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No records'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Toolbar */}
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => openDrawer(student)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200/60 dark:border-emerald-800/50 transition-all cursor-pointer"
+                      >
+                        <Briefcase className="w-3.5 h-3.5" />
+                        <span>View Duty Logs</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          openDrawer(student);
+                          setEditingTargetId(student._id);
+                          setTargetInputVal(String(student.targetHours || 486));
+                        }}
+                        className="px-3 py-2 rounded-xl text-xs font-extrabold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                        title="Edit Target Hours"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() => exportStudentPDF(student)}
+                        disabled={exportingId === student._id}
+                        className="px-3 py-2 rounded-xl text-xs font-extrabold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer disabled:opacity-50"
+                        title="Export DTR PDF"
+                      >
+                        {exportingId === student._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                      </button>
+
+                      <button
+                        onClick={() => setUserToDelete(student)}
+                        className="px-3 py-2 rounded-xl text-xs font-extrabold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200/60 dark:border-red-800/50 transition-all cursor-pointer"
+                        title="Move Account to Trash"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  Showing <span className="font-bold text-slate-900 dark:text-white">{startIdx + 1}</span>–<span className="font-bold text-slate-900 dark:text-white">{endIdx}</span> of <span className="font-bold text-slate-900 dark:text-white">{totalCount}</span> students
+                </p>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => onPageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                    <button
+                      key={pageNum}
+                      onClick={() => onPageChange(pageNum)}
+                      className={`w-8 h-8 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                        pageNum === currentPage
+                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  ))}
+
+                  <button
+                    onClick={() => onPageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
 
   // ─── Chart data helpers ───────────────────────────────────────────────────
   const hoursBarData = students
@@ -642,7 +836,7 @@ export default function AdminDashboard() {
               />
             </div>
           </div>
-          {renderStudentTable(filteredStudents)}
+          {renderStudentCards(paginatedStudents, studentPage, totalStudentPages, filteredStudents.length, setStudentPage)}
         </div>
       );
       case 'reports': return (
@@ -807,7 +1001,7 @@ export default function AdminDashboard() {
         shadow-xl shadow-slate-200/30 dark:shadow-none
         transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        lg:relative lg:translate-x-0 lg:shadow-none lg:z-auto
+        lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-none lg:z-20
       `}>
         {/* Sidebar Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
@@ -1026,26 +1220,64 @@ export default function AdminDashboard() {
                   )}
 
                   {/* Records table */}
-                  <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Duty Log Records</p>
-                  {drawerRecords.length === 0 ? (
-                    <div className="text-center py-10 text-slate-400 dark:text-slate-500 text-sm font-medium">No records logged yet.</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {drawerRecords.map(r => (
-                        <div key={r._id} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50 rounded-xl p-4 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                              {new Date(r.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                            </p>
-                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{r.startTime} — {r.endTime} {r.category ? `· ${r.category}` : ''}</p>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">{parseFloat(r.totalHours).toFixed(2)} hrs</p>
-                          </div>
+                  {(() => {
+                    const DRAWER_PER_PAGE = 6;
+                    const totalPages = Math.ceil(drawerRecords.length / DRAWER_PER_PAGE) || 1;
+                    const start = (drawerPage - 1) * DRAWER_PER_PAGE;
+                    const paginated = drawerRecords.slice(start, start + DRAWER_PER_PAGE);
+
+                    return (
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Duty Log Records ({drawerRecords.length})</p>
+                          {totalPages > 1 && (
+                            <span className="text-[10px] font-bold text-slate-400">Page {drawerPage} of {totalPages}</span>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  )}
+
+                        {drawerRecords.length === 0 ? (
+                          <div className="text-center py-10 text-slate-400 dark:text-slate-500 text-sm font-medium">No records logged yet.</div>
+                        ) : (
+                          <div className="space-y-2">
+                            {paginated.map(r => (
+                              <div key={r._id} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50 rounded-xl p-3.5 flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                                    {new Date(r.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </p>
+                                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{r.startTime} — {r.endTime} {r.category ? `· ${r.category}` : ''}</p>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <p className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">{parseFloat(r.totalHours).toFixed(2)} hrs</p>
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Drawer Pagination Toolbar */}
+                            {totalPages > 1 && (
+                              <div className="flex items-center justify-between pt-3 mt-3 border-t border-slate-100 dark:border-slate-800">
+                                <button
+                                  onClick={() => setDrawerPage(p => Math.max(1, p - 1))}
+                                  disabled={drawerPage === 1}
+                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                >
+                                  Prev
+                                </button>
+                                <span className="text-xs font-bold text-slate-500">{drawerPage} / {totalPages}</span>
+                                <button
+                                  onClick={() => setDrawerPage(p => Math.min(totalPages, p + 1))}
+                                  disabled={drawerPage === totalPages}
+                                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                >
+                                  Next
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               )}
             </div>

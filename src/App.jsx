@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import ProfileSettings from './pages/ProfileSettings';
 import Terms from './pages/Terms';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
@@ -48,6 +49,15 @@ function App() {
               </ProtectedRoute>
             } 
           />
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <ProfileSettings />
+              </ProtectedRoute>
+            } 
+          />
+          <Route path="/settings" element={<Navigate to="/profile" replace />} />
           <Route path="/admin-login" element={<AdminLogin />} />
           <Route
             path="/admin"

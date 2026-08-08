@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand, Target, Flame, BarChart3, Code2, Palette, Wrench, ClipboardList, Loader2 } from 'lucide-react';
+import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand, Target, Flame, BarChart3, Code2, Palette, Wrench, ClipboardList, Loader2, Settings } from 'lucide-react';
 import ProofGalleryModal from './ProofGalleryModal';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const SKILL_CATEGORIES = [
   { id: 'Development', label: 'Development & Engineering', iconName: 'Code2', color: 'bg-emerald-500', barColor: 'from-emerald-500 to-teal-500' },
@@ -45,6 +45,10 @@ function Dashboard() {
     if (storedTheme) return storedTheme;
     return 'light';
   });
+  const [targetHours, setTargetHours] = useState(() => {
+    const stored = localStorage.getItem('targetHours');
+    return stored ? parseFloat(stored) : 486;
+  });
   const fileInputRef = useRef(null);
   const [files, setFiles] = useState([]);
   const [formData, setFormData] = useState({
@@ -57,6 +61,17 @@ function Dashboard() {
     category: 'Development'
   });
   const [showModal, setShowModal] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({
+    companyName: '',
+    department: '',
+    supervisorName: '',
+    courseProgram: '',
+    targetHours: 486,
+    defaultStartTime: '08:00',
+    defaultEndTime: '17:00',
+    defaultBreakDuration: 60,
+    includeSignatureBlock: true
+  });
   const [pendingTotalHours, setPendingTotalHours] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
@@ -68,14 +83,16 @@ function Dashboard() {
   const [deletingId, setDeletingId] = useState(null);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const recordsPerPage = 5;
+  const recordsPerPage = 8;
 
-  const totalPages = Math.ceil(records.length / recordsPerPage) || 1;
+  const totalPages = useMemo(() => Math.ceil(records.length / recordsPerPage) || 1, [records.length]);
   const validCurrentPage = Math.min(currentPage, totalPages);
   
   const indexOfLastRecord = validCurrentPage * recordsPerPage;
   const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
-  const paginatedRecords = records.slice(indexOfFirstRecord, indexOfLastRecord);
+  const paginatedRecords = useMemo(() => {
+    return records.slice(indexOfFirstRecord, indexOfLastRecord);
+  }, [records, indexOfFirstRecord, indexOfLastRecord]);
 
   const goToPrevPage = () => {
     setCurrentPage(prev => Math.max(1, prev - 1));
@@ -307,18 +324,45 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await axios.get(`${API_URL}/user/profile`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data) {
+          const p = res.data;
+          setSettingsForm({
+            companyName: p.companyName || '',
+            department: p.department || '',
+            supervisorName: p.supervisorName || '',
+            courseProgram: p.courseProgram || '',
+            targetHours: p.targetHours || 486,
+            defaultStartTime: p.defaultStartTime || '08:00',
+            defaultEndTime: p.defaultEndTime || '17:00',
+            defaultBreakDuration: p.defaultBreakDuration ?? 60,
+            includeSignatureBlock: p.includeSignatureBlock ?? true
+          });
+          if (p.targetHours) setTargetHours(p.targetHours);
+        }
+      } catch {
+        /* silent fallback */
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  useEffect(() => {
     const token = localStorage.getItem('token');
     const userStr = localStorage.getItem('user');
     const hasUser = userStr && userStr !== 'null' && userStr !== 'undefined';
-    console.log("Dashboard Mount: token =", token, "userStr =", userStr, "hasUser =", hasUser, "userState =", user);
     if (!token || !hasUser || !user) {
-      console.log("Dashboard: session invalid, clearing and redirecting to login");
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       navigate('/');
       return;
     }
-    console.log("Dashboard: session valid, fetching records");
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchRecords(token);
   }, [navigate, fetchRecords, user]);
@@ -463,10 +507,6 @@ function Dashboard() {
   };
 
   const totalAccumulatedHours = records.reduce((acc, rec) => acc + (rec.totalHours || 0), 0);
-  const [targetHours, setTargetHours] = useState(() => {
-    const stored = localStorage.getItem('targetHours');
-    return stored ? parseFloat(stored) : 600;
-  });
 
   const rawProgressPercent = targetHours > 0 ? (totalAccumulatedHours / targetHours) * 100 : 0;
   const visualProgressPercent = Math.min(100, rawProgressPercent);
@@ -744,26 +784,28 @@ function Dashboard() {
       doc.text('Student Trainee', 14, lineY + 8);
 
       // OJT Supervisor Signature
-      doc.line(78, lineY, 132, lineY);
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(15, 23, 42);
-      doc.text('OJT Industry Supervisor', 78, lineY + 4.5);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(100, 116, 139);
-      doc.text('Signature over Printed Name', 78, lineY + 8);
+      if (settingsForm.includeSignatureBlock) {
+        doc.line(78, lineY, 132, lineY);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text(settingsForm.supervisorName || 'OJT Industry Supervisor', 78, lineY + 4.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text('Signature over Printed Name', 78, lineY + 8);
 
-      // Academic Coordinator Signature
-      doc.line(142, lineY, 196, lineY);
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(15, 23, 42);
-      doc.text('Academic Coordinator', 142, lineY + 4.5);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(100, 116, 139);
-      doc.text('Signature over Printed Name', 142, lineY + 8);
+        // Academic Coordinator Signature
+        doc.line(142, lineY, 196, lineY);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text('Academic Coordinator', 142, lineY + 4.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text('Signature over Printed Name', 142, lineY + 8);
+      }
 
       doc.save(`OJT_DTR_Report_${studentNameStr.replace(/\s+/g, '_')}.pdf`);
     } catch (error) {
@@ -818,6 +860,30 @@ function Dashboard() {
                         <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest">Signed in as</p>
                         <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{user.email}</p>
                       </div>
+
+                      {/* My Profile Option */}
+                      <Link 
+                        to="/profile"
+                        onClick={() => setShowProfileDropdown(false)}
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-xl transition-all font-bold cursor-pointer mb-1"
+                      >
+                        <div className="flex items-center gap-2">
+                          <UserIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>My Profile</span>
+                        </div>
+                      </Link>
+
+                      {/* Settings Option */}
+                      <Link 
+                        to="/profile?tab=settings"
+                        onClick={() => setShowProfileDropdown(false)}
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-xl transition-all font-bold cursor-pointer mb-1"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Settings className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                          <span>Settings</span>
+                        </div>
+                      </Link>
 
                       {/* Theme Toggle option */}
                       <button 
