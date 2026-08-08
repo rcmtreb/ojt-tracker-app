@@ -8,7 +8,7 @@ import {
   ShieldCheck, Clock, TrendingUp, Activity, Search,
   ChevronRight, Medal, Trophy, Crown, Briefcase,
   Code2, Palette, Wrench, ClipboardList, Download, Loader2,
-  Calendar, BarChart3, Hand, RotateCcw, Trash2, Archive, AlertTriangle, CheckCircle2
+  Calendar, BarChart3, Hand, RotateCcw, Trash2, Archive, AlertTriangle, CheckCircle2, Pencil
 } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -18,7 +18,6 @@ import {
 import { API_URL } from '../config';
 
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'ojttrackerapp@gmail.com';
-const DEFAULT_TARGET = 486;
 
 const CHART_COLORS = ['#10b981', '#14b8a6', '#a855f7', '#f59e0b', '#64748b'];
 const RANK_COLORS = { 'Overachieving Master': '#f59e0b', 'OJT Specialist': '#10b981', 'Dedicated Apprentice': '#3b82f6', 'Rookie Trainee': '#64748b' };
@@ -44,7 +43,8 @@ function formatTime(t) { return t || '--:--'; }
 function buildDTRPdf(doc, student, records, startY = 14) {
   const name = student.name || 'Student';
   const totalHrs = parseFloat(student.totalHours || 0).toFixed(2);
-  const pct = Math.min(((student.totalHours / DEFAULT_TARGET) * 100), 999).toFixed(1);
+  const target = student.targetHours || 486;
+  const pct = Math.min(((student.totalHours / target) * 100), 999).toFixed(1);
 
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
@@ -80,7 +80,7 @@ function buildDTRPdf(doc, student, records, startY = 14) {
   doc.text('PROGRESS', 148, infoY + 5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(30, 41, 59);
-  doc.text(`${pct}% of ${DEFAULT_TARGET} hrs`, 148, infoY + 10);
+  doc.text(`${pct}% of ${target} hrs`, 148, infoY + 10);
 
   // Table
   const tableY = infoY + 22;
@@ -130,6 +130,9 @@ export default function AdminDashboard() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [restoringId, setRestoringId] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+  const [editingTargetId, setEditingTargetId] = useState(null);
+  const [targetInputVal, setTargetInputVal] = useState('');
+  const [isUpdatingTarget, setIsUpdatingTarget] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [drawerStudent, setDrawerStudent] = useState(null);
@@ -221,6 +224,30 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleUpdateTarget = async (studentId, newTarget) => {
+    const parsed = parseFloat(newTarget);
+    if (isNaN(parsed) || parsed <= 0) {
+      setToastMessage({ type: 'error', text: 'Target hours must be a positive number.' });
+      return;
+    }
+    setIsUpdatingTarget(true);
+    try {
+      await axios.patch(`${API_URL}/admin/users/${studentId}/target`, { targetHours: parsed }, { headers: authHeader() });
+      setToastMessage({ type: 'success', text: `Target hours updated to ${parsed} hrs!` });
+      setEditingTargetId(null);
+
+      // Real-time local state update
+      setStudents(prev => prev.map(s => s._id === studentId ? { ...s, targetHours: parsed } : s));
+      if (drawerStudent?._id === studentId) {
+        setDrawerStudent(prev => prev ? { ...prev, targetHours: parsed } : null);
+      }
+    } catch (err) {
+      setToastMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update target hours.' });
+    } finally {
+      setIsUpdatingTarget(false);
+    }
+  };
+
   // Open student drawer
   const openDrawer = async (student) => {
     setDrawerStudent(student);
@@ -283,7 +310,7 @@ export default function AdminDashboard() {
           s.email || '',
           s.totalRecords,
           `${s.totalHours} hrs`,
-          `${Math.min(((s.totalHours / DEFAULT_TARGET) * 100), 999).toFixed(1)}%`
+          `${Math.min(((s.totalHours / (s.targetHours || 486)) * 100), 999).toFixed(1)}%`
         ]),
         theme: 'grid',
         headStyles: { fillColor: [5, 150, 105], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
@@ -358,7 +385,8 @@ export default function AdminDashboard() {
               <tr><td colSpan={5} className="text-center py-12 text-slate-400 dark:text-slate-500 text-sm font-medium">No students found.</td></tr>
             )}
             {list.map(student => {
-              const pct = Math.min((student.totalHours / DEFAULT_TARGET) * 100, 100);
+              const target = student.targetHours || 486;
+              const pct = Math.min((student.totalHours / target) * 100, 100);
               const rank = getRankBadge(pct);
               const RankIcon = rank.icon;
               return (
@@ -388,15 +416,15 @@ export default function AdminDashboard() {
                   </td>
                   {/* Progress */}
                   <td className="px-5 py-4">
-                    <div className="flex items-center gap-3 min-w-[140px]">
+                    <div className="flex items-center gap-3 min-w-[160px]">
                       <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
                         <div
-                          className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all"
+                          className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
                           style={{ width: `${pct}%` }}
                         />
                       </div>
-                      <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 w-14 text-right">
-                        {student.totalHours} <span className="text-slate-400 font-medium">hrs</span>
+                      <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 min-w-[70px] text-right">
+                        {student.totalHours} <span className="text-slate-400 font-medium">/ {target}h</span>
                       </span>
                     </div>
                   </td>
@@ -471,7 +499,8 @@ export default function AdminDashboard() {
   const rankPieData = (() => {
     const counts = { 'Overachieving Master': 0, 'OJT Specialist': 0, 'Dedicated Apprentice': 0, 'Rookie Trainee': 0 };
     students.forEach(s => {
-      const pct = (s.totalHours / DEFAULT_TARGET) * 100;
+      const target = s.targetHours || 486;
+      const pct = (s.totalHours / target) * 100;
       const rank = pct >= 100 ? 'Overachieving Master' : pct >= 75 ? 'OJT Specialist' : pct >= 25 ? 'Dedicated Apprentice' : 'Rookie Trainee';
       counts[rank]++;
     });
@@ -644,7 +673,8 @@ export default function AdminDashboard() {
           <h3 className="text-base font-extrabold text-slate-700 dark:text-slate-200 mb-4">Per-Student PDF Export</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {students.map(student => {
-              const pct = Math.min((student.totalHours / DEFAULT_TARGET) * 100, 100);
+              const target = student.targetHours || 486;
+              const pct = Math.min((student.totalHours / target) * 100, 100);
               const rank = getRankBadge(pct);
               const RankIcon = rank.icon;
               return (
@@ -663,17 +693,17 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex items-center justify-between mb-3 text-xs">
                     <span className="text-slate-500 dark:text-slate-400 font-medium">{student.totalRecords} records</span>
-                    <span className="font-extrabold text-slate-800 dark:text-slate-200">{student.totalHours} hrs</span>
+                    <span className="font-extrabold text-slate-800 dark:text-slate-200">{student.totalHours} / {target} hrs</span>
                   </div>
                   <div className="bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden mb-4">
-                    <div className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500" style={{ width: `${pct}%` }} />
+                    <div className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500" style={{ width: `${pct}%` }} />
                   </div>
                   <button
                     onClick={() => exportStudentPDF(student)}
                     disabled={exportingId === student._id}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200/60 dark:border-emerald-800/50 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    {exportingId === student._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    {exportingId === student._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                     {exportingId === student._id ? 'Generating...' : 'Export DTR PDF'}
                   </button>
                 </div>
@@ -910,12 +940,55 @@ export default function AdminDashboard() {
                 </div>
               ) : (
                 <>
+                  {/* Target Hours Edit Card */}
+                  <div className="bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl p-4 mb-6 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Required Target Hours</p>
+                      <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">{drawerStudent.targetHours || 486} <span className="text-slate-400 font-normal text-xs">hrs target</span></p>
+                    </div>
+                    {editingTargetId === drawerStudent._id ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={targetInputVal}
+                          onChange={e => setTargetInputVal(e.target.value)}
+                          className="w-20 px-2.5 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-extrabold focus:outline-none"
+                          placeholder="Hours"
+                        />
+                        <button
+                          onClick={() => handleUpdateTarget(drawerStudent._id, targetInputVal)}
+                          disabled={isUpdatingTarget}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all disabled:opacity-50 cursor-pointer"
+                        >
+                          {isUpdatingTarget ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => setEditingTargetId(null)}
+                          className="px-2 py-1.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setEditingTargetId(drawerStudent._id);
+                          setTargetInputVal(String(drawerStudent.targetHours || 486));
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-900/40 hover:bg-emerald-200/60 dark:hover:bg-emerald-900/60 transition-all cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Edit Target</span>
+                      </button>
+                    )}
+                  </div>
+
                   {/* Stat chips */}
                   <div className="grid grid-cols-3 gap-3 mb-6">
                     {[
                       { label: 'Records', value: drawerStudent.totalRecords },
                       { label: 'Total Hours', value: `${drawerStudent.totalHours}` },
-                      { label: 'Progress', value: `${Math.min((drawerStudent.totalHours / DEFAULT_TARGET) * 100, 999).toFixed(1)}%` },
+                      { label: 'Progress', value: `${Math.min((drawerStudent.totalHours / (drawerStudent.targetHours || 486)) * 100, 999).toFixed(1)}%` },
                     ].map(({ label, value }) => (
                       <div key={label} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 rounded-xl p-3 text-center">
                         <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{label}</p>

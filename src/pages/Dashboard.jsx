@@ -525,7 +525,7 @@ function Dashboard() {
     setEditingTarget(false);
   };
 
-  const saveTarget = () => {
+  const saveTarget = async () => {
     const num = parseFloat(targetInput);
     if (!isNaN(num) && num > 0) {
       setTargetHours(num);
@@ -533,6 +533,16 @@ function Dashboard() {
       setEditingTarget(false);
       setTargetSaved(true);
       setTimeout(() => setTargetSaved(false), 2000);
+      try {
+        const token = localStorage.getItem('token');
+        if (token) {
+          await axios.patch(`${API_URL}/user/target`, { targetHours: num }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
+      } catch {
+        /* silent fallback */
+      }
     } else {
       alert('Please enter a valid positive number');
     }

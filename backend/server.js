@@ -51,6 +51,7 @@ const userSchema = new mongoose.Schema({
     name: String,
     email: String,
     picture: String,
+    targetHours: { type: Number, default: 486 },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null }
 });
@@ -116,6 +117,28 @@ app.post('/api/auth/google', async (req, res) => {
     } catch (err) {
         console.error('Google Auth Error:', err);
         res.status(400).json({ message: `Google auth error: ${err.message}` });
+    }
+});
+
+// User Target Sync Route
+app.patch('/api/user/target', verifyToken, async (req, res) => {
+    try {
+        const { targetHours } = req.body;
+        const parsed = parseFloat(targetHours);
+        if (isNaN(parsed) || parsed <= 0) {
+            return res.status(400).json({ message: 'Target hours must be a positive number' });
+        }
+        const user = await User.findByIdAndUpdate(
+            req.userId,
+            { targetHours: parsed },
+            { new: true }
+        );
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.json({ message: 'Target hours updated', user });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
     }
 });
 
@@ -285,6 +308,7 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
                 name: u.name,
                 email: u.email,
                 picture: u.picture,
+                targetHours: u.targetHours || 486,
                 totalRecords: records.length,
                 totalHours: parseFloat(totalHours.toFixed(2)),
                 lastActive: records.length ? records[0].date : null,
@@ -309,6 +333,7 @@ app.get('/api/admin/users/archived', verifyAdmin, async (req, res) => {
                 name: u.name,
                 email: u.email,
                 picture: u.picture,
+                targetHours: u.targetHours || 486,
                 deletedAt: u.deletedAt,
                 totalRecords: records.length,
                 totalHours: parseFloat(totalHours.toFixed(2))
@@ -330,6 +355,28 @@ app.get('/api/admin/users/:id/records', verifyAdmin, async (req, res) => {
     }
 });
 
+// PATCH /api/admin/users/:id/target — Update student target hours
+app.patch('/api/admin/users/:id/target', verifyAdmin, async (req, res) => {
+    try {
+        const { targetHours } = req.body;
+        const parsed = parseFloat(targetHours);
+        if (isNaN(parsed) || parsed <= 0) {
+            return res.status(400).json({ message: 'Target hours must be a positive number' });
+        }
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            { targetHours: parsed },
+            { new: true }
+        );
+        if (!user) {
+            return res.status(404).json({ message: 'Student not found' });
+        }
+        res.json({ message: 'Target hours updated successfully', user });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // DELETE /api/admin/users/:id — Soft-delete a student account and their records
 app.delete('/api/admin/users/:id', verifyAdmin, async (req, res) => {
     try {
@@ -343,7 +390,7 @@ app.delete('/api/admin/users/:id', verifyAdmin, async (req, res) => {
         }
 
         const now = new Date();
-        const user = await User.findByIdAndUpdate(
+        await User.findByIdAndUpdate(
             userId,
             { isDeleted: true, deletedAt: now },
             { new: true }
