@@ -8,7 +8,7 @@ import {
   ShieldCheck, Clock, TrendingUp, Activity, Search,
   ChevronRight, ChevronLeft, Medal, Trophy, Crown, Briefcase,
   Code2, Palette, Wrench, ClipboardList, Download, Loader2,
-  Calendar, BarChart3, Hand, RotateCcw, Trash2, Archive, AlertTriangle, CheckCircle2, Pencil, Building2, GraduationCap
+  Calendar, BarChart3, Hand, RotateCcw, Trash2, Archive, AlertTriangle, CheckCircle2, Pencil, Building2, GraduationCap, CalendarDays, Plus
 } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -138,6 +138,8 @@ export default function AdminDashboard() {
   const [drawerStudent, setDrawerStudent] = useState(null);
   const [drawerRecords, setDrawerRecords] = useState([]);
   const [drawerLoading, setDrawerLoading] = useState(false);
+  const [drawerViewTab, setDrawerViewTab] = useState('logs'); // 'logs' | 'calendar'
+  const [drawerCalendarDate, setDrawerCalendarDate] = useState(() => new Date());
   const [exportingId, setExportingId] = useState(null);
   const [exportingAll, setExportingAll] = useState(false);
   const [studentPage, setStudentPage] = useState(1);
@@ -247,6 +249,46 @@ export default function AdminDashboard() {
       setToastMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update target hours.' });
     } finally {
       setIsUpdatingTarget(false);
+    }
+  };
+
+  const handleToggleStudentCompletion = async (student) => {
+    const nextStatus = student.ojtStatus === 'completed' ? 'in_progress' : 'completed';
+    try {
+      await axios.patch(
+        `${API_URL}/admin/users/${student._id}/completion`,
+        { ojtStatus: nextStatus, completedAtDate: new Date().toISOString().split('T')[0] },
+        { headers: authHeader() }
+      );
+      setToastMessage({
+        type: 'success',
+        text: `Updated ${student.name || 'Student'} status to ${nextStatus === 'completed' ? 'Completed' : 'In Progress'}`
+      });
+      const usersRes = await axios.get(`${API_URL}/admin/users`, { headers: authHeader() });
+      setStudents(usersRes.data);
+      if (drawerStudent?._id === student._id) {
+        setDrawerStudent(prev => prev ? { ...prev, ojtStatus: nextStatus, completedAtDate: new Date().toISOString().split('T')[0] } : null);
+      }
+    } catch {
+      setToastMessage({ type: 'error', text: 'Failed to update student completion status.' });
+    }
+  };
+
+  const handleAdminStartNewOJT = async (student) => {
+    try {
+      await axios.post(
+        `${API_URL}/admin/users/${student._id}/start-new-ojt`,
+        {},
+        { headers: authHeader() }
+      );
+      setToastMessage({
+        type: 'success',
+        text: `Started new OJT internship batch for ${student.name || 'Student'}`
+      });
+      const usersRes = await axios.get(`${API_URL}/admin/users`, { headers: authHeader() });
+      setStudents(usersRes.data);
+    } catch {
+      setToastMessage({ type: 'error', text: 'Failed to start new OJT for student.' });
     }
   };
 
@@ -524,11 +566,33 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
-                        <div className={`inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-xl text-[10px] font-extrabold flex-shrink-0 ${rank.bg} ${rank.color}`}>
-                          <RankIcon className="w-3.5 h-3.5" />
-                          <span>{rank.label}</span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {student.currentBatch > 1 && (
+                            <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-lg text-[9px] font-extrabold">
+                              OJT Batch #{student.currentBatch}
+                            </span>
+                          )}
+                          <div className={`inline-flex items-center gap-1.5 border px-2.5 py-1 rounded-xl text-[10px] font-extrabold ${rank.bg} ${rank.color}`}>
+                            <RankIcon className="w-3.5 h-3.5" />
+                            <span>{rank.label}</span>
+                          </div>
                         </div>
                       </div>
+
+                      {/* Completion Status Badge if Completed */}
+                      {student.ojtStatus === 'completed' && (
+                        <div className="flex items-center gap-2 mb-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-2.5 rounded-xl">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                          <div className="text-xs font-extrabold text-emerald-800 dark:text-emerald-200">
+                            <span>OJT Completed</span>
+                            {student.completedAtDate && (
+                              <span className="font-normal text-[11px] text-emerald-600 dark:text-emerald-400 ml-1.5">
+                                ({new Date(student.completedAtDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Internship & Academic Info Grid */}
                       <div className="grid grid-cols-2 gap-3 mb-5">
@@ -600,6 +664,26 @@ export default function AdminDashboard() {
                         title="Edit Target Hours"
                       >
                         <Pencil className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() => handleToggleStudentCompletion(student)}
+                        className={`px-3 py-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                          student.ojtStatus === 'completed'
+                            ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-sm'
+                            : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                        }`}
+                        title={student.ojtStatus === 'completed' ? 'Reopen Training (In Progress)' : 'Mark OJT as Completed'}
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() => handleAdminStartNewOJT(student)}
+                        className="px-3 py-2 rounded-xl text-xs font-extrabold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                        title="Start New OJT Internship Batch"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                       </button>
 
                       <button
@@ -1219,8 +1303,111 @@ export default function AdminDashboard() {
                     </div>
                   )}
 
-                  {/* Records table */}
+                  {/* Drawer Tab Switcher */}
+                  <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl mb-4 border border-slate-200/60 dark:border-slate-700/60">
+                    <button
+                      onClick={() => setDrawerViewTab('logs')}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        drawerViewTab === 'logs'
+                          ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+                      }`}
+                    >
+                      <ClipboardList className="w-3.5 h-3.5" />
+                      <span>Duty Logs</span>
+                    </button>
+                    <button
+                      onClick={() => setDrawerViewTab('calendar')}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        drawerViewTab === 'calendar'
+                          ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+                      }`}
+                    >
+                      <CalendarDays className="w-3.5 h-3.5" />
+                      <span>Duty Calendar</span>
+                    </button>
+                  </div>
+
+                  {/* Drawer Tab Content */}
                   {(() => {
+                    if (drawerViewTab === 'calendar') {
+                      const yr = drawerCalendarDate.getFullYear();
+                      const mo = drawerCalendarDate.getMonth();
+                      const fDay = new Date(yr, mo, 1);
+                      const lDay = new Date(yr, mo + 1, 0);
+                      const startDay = fDay.getDay();
+                      const daysInMo = lDay.getDate();
+
+                      const dateMap = {};
+                      drawerRecords.forEach(r => {
+                        if (!r.date) return;
+                        const k = new Date(r.date).toISOString().split('T')[0];
+                        if (!dateMap[k]) dateMap[k] = [];
+                        dateMap[k].push(r);
+                      });
+
+                      const moName = drawerCalendarDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                      const todayK = new Date().toISOString().split('T')[0];
+
+                      const cells = [];
+                      for (let i = 0; i < startDay; i++) cells.push({ isCurrent: false });
+                      for (let d = 1; d <= daysInMo; d++) {
+                        const dt = new Date(yr, mo, d);
+                        const k = dt.toISOString().split('T')[0];
+                        const dow = dt.getDay();
+                        const isWknd = dow === 0 || dow === 6;
+                        const isP = k < todayK;
+                        const recs = dateMap[k] || [];
+                        const totalH = recs.reduce((s, r) => s + (r.totalHours || 0), 0);
+                        cells.push({ isCurrent: true, dayNum: d, dateStr: k, isWeekend: isWknd, isPast: isP, records: recs, totalH });
+                      }
+
+                      return (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">{moName}</span>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => setDrawerCalendarDate(new Date(yr, mo - 1, 1))} className="p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 cursor-pointer">
+                                <ChevronLeft className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => setDrawerCalendarDate(new Date(yr, mo + 1, 1))} className="p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 cursor-pointer">
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-7 gap-1.5 text-center">
+                            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                              <div key={i} className="text-[10px] font-extrabold text-slate-400 uppercase">{d}</div>
+                            ))}
+                            {cells.map((c, i) => {
+                              if (!c.isCurrent) return <div key={i} className="h-12 bg-slate-50/20 dark:bg-slate-900/10 rounded-lg opacity-30" />;
+                              const hasRecs = c.records.length > 0;
+                              const isMissing = !hasRecs && c.isPast && !c.isWeekend;
+                              return (
+                                <div key={c.dateStr} className={`h-12 p-1 rounded-lg border flex flex-col justify-between text-[10px] font-extrabold ${
+                                  c.dateStr === todayK
+                                    ? 'ring-1 ring-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/30 border-emerald-300'
+                                    : hasRecs
+                                    ? 'bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-200 text-emerald-800 dark:text-emerald-300'
+                                    : isMissing
+                                    ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 text-amber-600'
+                                    : 'bg-slate-50/40 dark:bg-slate-800/20 border-slate-100 dark:border-slate-800 text-slate-500'
+                                }`}>
+                                  <div className="flex justify-between">
+                                    <span>{c.dayNum}</span>
+                                    {hasRecs && <span>{c.totalH.toFixed(1)}h</span>}
+                                  </div>
+                                  {isMissing && <span className="text-[8px] text-amber-500 leading-none">Miss</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    }
+
                     const DRAWER_PER_PAGE = 6;
                     const totalPages = Math.ceil(drawerRecords.length / DRAWER_PER_PAGE) || 1;
                     const start = (drawerPage - 1) * DRAWER_PER_PAGE;

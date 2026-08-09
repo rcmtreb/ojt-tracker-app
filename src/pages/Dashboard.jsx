@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand, Target, Flame, BarChart3, Code2, Palette, Wrench, ClipboardList, Loader2, Settings, List, CalendarDays, Plus } from 'lucide-react';
+import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand, Target, Flame, BarChart3, Code2, Palette, Wrench, ClipboardList, Loader2, Settings, List, CalendarDays, Plus, CheckCircle2, X } from 'lucide-react';
 import ProofGalleryModal from './ProofGalleryModal';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -30,7 +30,7 @@ import { API_URL, BASE_URL } from '../config';
 function Dashboard() {
   const navigate = useNavigate();
   const [records, setRecords] = useState([]);
-  const [user] = useState(() => {
+  const [user, setUser] = useState(() => {
     try {
       const storedUser = localStorage.getItem('user');
       if (!storedUser || storedUser === 'null' || storedUser === 'undefined') return null;
@@ -63,6 +63,18 @@ function Dashboard() {
   const [showModal, setShowModal] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
   const [calendarDate, setCalendarDate] = useState(() => new Date());
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [completionDateInput, setCompletionDateInput] = useState(() => new Date().toISOString().split('T')[0]);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [showStartNewOjtModal, setShowStartNewOjtModal] = useState(false);
+  const [newOjtForm, setNewOjtForm] = useState({
+    targetHours: 486,
+    companyName: '',
+    department: '',
+    supervisorName: '',
+    courseProgram: ''
+  });
+  const [isStartingNewOjt, setIsStartingNewOjt] = useState(false);
   const [settingsForm, setSettingsForm] = useState({
     companyName: '',
     department: '',
@@ -261,6 +273,55 @@ function Dashboard() {
     localStorage.removeItem('user');
     navigate('/');
   }, [navigate]);
+
+  const handleCompleteOJT = async () => {
+    setIsCompleting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.patch(
+        `${API_URL}/user/complete`,
+        { completedAtDate: completionDateInput },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.data?.user) {
+        setUser(prev => ({ ...prev, ...res.data.user }));
+        localStorage.setItem('user', JSON.stringify({ ...user, ...res.data.user }));
+      }
+      setShowCompleteModal(false);
+    } catch {
+      alert('Failed to mark OJT as completed. Please try again.');
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+
+  const handleStartNewOJT = async () => {
+    setIsStartingNewOjt(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(
+        `${API_URL}/user/start-new-ojt`,
+        newOjtForm,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.data?.user) {
+        setUser(res.data.user);
+        localStorage.setItem('user', JSON.stringify(res.data.user));
+        if (res.data.user.targetHours) {
+          localStorage.setItem('targetHours', String(res.data.user.targetHours));
+        }
+      }
+      setShowStartNewOjtModal(false);
+      const recordsRes = await axios.get(`${API_URL}/records`, { headers: { Authorization: `Bearer ${token}` } });
+      if (Array.isArray(recordsRes.data)) {
+        setRecords(recordsRes.data);
+      }
+    } catch {
+      alert('Failed to start new OJT internship. Please try again.');
+    } finally {
+      setIsStartingNewOjt(false);
+    }
+  };
 
   const startEdit = useCallback((record) => {
     setEditingRecordId(record._id);
@@ -1102,8 +1163,40 @@ function Dashboard() {
             <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50/50 dark:bg-emerald-900/5 rounded-full -mr-32 -mt-32 transition-transform duration-700 group-hover:scale-105"></div>
             
             <div className="relative z-10">
-              {/* Celebration Banner when Target Exceeded */}
-              {isTargetExceeded && (
+              {/* OJT Completed Banner */}
+              {user?.ojtStatus === 'completed' ? (
+                <div className="mb-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/60 rounded-xl flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-sm text-emerald-900 dark:text-emerald-200">OJT Training Completed & Verified</p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
+                        Official Completion Date: <span className="font-bold">{user.completedAtDate ? new Date(user.completedAtDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Verified'}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setNewOjtForm({
+                          targetHours: 486,
+                          companyName: '',
+                          department: '',
+                          supervisorName: '',
+                          courseProgram: user?.courseProgram || ''
+                        });
+                        setShowStartNewOjtModal(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm transition cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Start New OJT</span>
+                    </button>
+                  </div>
+                </div>
+              ) : isTargetExceeded ? (
                 <div className="mb-4 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-teal-500/10 border border-amber-500/30 dark:border-amber-500/20 rounded-2xl p-4 flex items-center justify-between shadow-sm animate-fade-in">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center text-amber-500">
@@ -1119,8 +1212,18 @@ function Dashboard() {
                       </p>
                     </div>
                   </div>
+                  <button
+                    onClick={() => {
+                      setCompletionDateInput(new Date().toISOString().split('T')[0]);
+                      setShowCompleteModal(true);
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Complete OJT</span>
+                  </button>
                 </div>
-              )}
+              ) : null}
 
               <div className="flex flex-wrap items-center gap-3 mb-2">
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
@@ -1877,6 +1980,153 @@ function Dashboard() {
                 ) : (
                   <span>{editingRecordId ? 'Confirm & Update' : 'Confirm & Save'}</span>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Completion Modal */}
+      {showCompleteModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-100 dark:border-slate-800 shadow-2xl max-w-md w-full animate-scale-up">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-extrabold">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">Confirm OJT Completion</h3>
+                  <p className="text-xs text-slate-400">Mark training as finished in system</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCompleteModal(false)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 my-4">
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Please confirm the date you officially completed your required OJT hours. Marking your OJT as completed will finish your training record and lock new log entries.
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-emerald-600" /> Official Completion Date
+                </label>
+                <input
+                  type="date"
+                  value={completionDateInput}
+                  onChange={e => setCompletionDateInput(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => setShowCompleteModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCompleteOJT}
+                disabled={isCompleting || !completionDateInput}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition cursor-pointer disabled:opacity-50"
+              >
+                {isCompleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                <span>{isCompleting ? 'Saving...' : 'Confirm & Complete OJT'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Start New OJT Modal */}
+      {showStartNewOjtModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-100 dark:border-slate-800 shadow-2xl max-w-lg w-full animate-scale-up">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-extrabold">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">Start New OJT Internship</h3>
+                  <p className="text-xs text-slate-400">Enroll in a new OJT period with fresh target hours</p>
+                </div>
+              </div>
+              <button onClick={() => setShowStartNewOjtModal(false)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 my-4">
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300">
+                <span className="font-extrabold text-emerald-600 dark:text-emerald-400">Note:</span> All previous duty log records from your previous OJT will be safely preserved in <span className="font-bold">OJT Batch #{(user?.currentBatch || 1)}</span> history.
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Required Target Hours for New OJT</label>
+                <input
+                  type="number"
+                  placeholder="e.g. 486 or 300"
+                  value={newOjtForm.targetHours}
+                  onChange={e => setNewOjtForm({ ...newOjtForm, targetHours: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Company / Host Training Establishment (HTE)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Global Tech Solutions Inc."
+                  value={newOjtForm.companyName}
+                  onChange={e => setNewOjtForm({ ...newOjtForm, companyName: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Department</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. IT Operations"
+                    value={newOjtForm.department}
+                    onChange={e => setNewOjtForm({ ...newOjtForm, department: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Industry Supervisor</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Jane Doe"
+                    value={newOjtForm.supervisorName}
+                    onChange={e => setNewOjtForm({ ...newOjtForm, supervisorName: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => setShowStartNewOjtModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStartNewOJT}
+                disabled={isStartingNewOjt}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition cursor-pointer disabled:opacity-50"
+              >
+                {isStartingNewOjt ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                <span>{isStartingNewOjt ? 'Starting New OJT...' : 'Confirm & Start New OJT'}</span>
               </button>
             </div>
           </div>

@@ -60,6 +60,20 @@ const userSchema = new mongoose.Schema({
     defaultEndTime: { type: String, default: '17:00' },
     defaultBreakDuration: { type: Number, default: 60 },
     includeSignatureBlock: { type: Boolean, default: true },
+    ojtStatus: { type: String, enum: ['in_progress', 'completed'], default: 'in_progress' },
+    completedAtDate: { type: String, default: null },
+    currentBatch: { type: Number, default: 1 },
+    internshipHistory: [{
+        batchNumber: Number,
+        companyName: String,
+        department: String,
+        supervisorName: String,
+        courseProgram: String,
+        targetHours: Number,
+        totalHours: Number,
+        completedAtDate: String,
+        completedAt: { type: Date, default: Date.now }
+    }],
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null }
 });
@@ -77,6 +91,7 @@ const recordSchema = new mongoose.Schema({
     taskDescription: String,
     category: { type: String, default: 'Development' },
     documentaryUrls: [String],
+    internshipBatch: { type: Number, default: 1 },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null }
 });
@@ -196,6 +211,68 @@ app.patch('/api/user/settings', verifyToken, async (req, res) => {
     }
 });
 
+// Student Mark OJT Complete Route
+app.patch('/api/user/complete', verifyToken, async (req, res) => {
+    try {
+        const { completedAtDate } = req.body;
+        const user = await User.findByIdAndUpdate(
+            req.userId,
+            {
+                ojtStatus: 'completed',
+                completedAtDate: completedAtDate || new Date().toISOString().split('T')[0]
+            },
+            { new: true }
+        );
+        if (!user) return res.status(404).json({ message: 'User not found' });
+        res.json({ message: 'OJT marked as completed', user });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Student Start New OJT Route
+app.post('/api/user/start-new-ojt', verifyToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        const records = await Record.find({ userId: user._id, isDeleted: { $ne: true }, internshipBatch: user.currentBatch || 1 });
+        const totalHoursBatch = records.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+
+        const completedHistoryItem = {
+            batchNumber: user.currentBatch || 1,
+            companyName: user.companyName || '',
+            department: user.department || '',
+            supervisorName: user.supervisorName || '',
+            courseProgram: user.courseProgram || '',
+            targetHours: user.targetHours || 486,
+            totalHours: parseFloat(totalHoursBatch.toFixed(2)),
+            completedAtDate: user.completedAtDate || new Date().toISOString().split('T')[0],
+            completedAt: new Date()
+        };
+
+        const updatedHistory = [...(user.internshipHistory || []), completedHistoryItem];
+        const nextBatch = (user.currentBatch || 1) + 1;
+
+        const updateData = {
+            currentBatch: nextBatch,
+            internshipHistory: updatedHistory,
+            ojtStatus: 'in_progress',
+            completedAtDate: null,
+            targetHours: req.body.targetHours ? parseFloat(req.body.targetHours) : user.targetHours,
+            companyName: req.body.companyName !== undefined ? req.body.companyName : user.companyName,
+            department: req.body.department !== undefined ? req.body.department : user.department,
+            supervisorName: req.body.supervisorName !== undefined ? req.body.supervisorName : user.supervisorName,
+            courseProgram: req.body.courseProgram !== undefined ? req.body.courseProgram : user.courseProgram
+        };
+
+        const updatedUser = await User.findByIdAndUpdate(req.userId, updateData, { new: true });
+        res.json({ message: 'Started new OJT internship successfully', user: updatedUser });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // Records Routes
 app.get('/api/records', verifyToken, async (req, res) => {
     try {
@@ -220,6 +297,11 @@ app.post('/api/records', verifyToken, (req, res) => {
         }
 
         try {
+            const user = await User.findById(req.userId);
+            if (user && user.ojtStatus === 'completed') {
+                return res.status(400).json({ message: 'OJT Training is marked as completed. Please click "Start New OJT" to log further entries.' });
+            }
+
             const documentaryUrls = req.files ? req.files.map(file => {
                 const base64String = file.buffer.toString('base64');
                 return `data:${file.mimetype};base64,${base64String}`;
@@ -228,6 +310,7 @@ app.post('/api/records', verifyToken, (req, res) => {
             const recordData = {
                 ...req.body,
                 userId: req.userId,
+                internshipBatch: user ? (user.currentBatch || 1) : 1,
                 totalHours: parseFloat(req.body.totalHours),
                 breakDuration: parseInt(req.body.breakDuration),
                 documentaryUrls: documentaryUrls
@@ -332,8 +415,11 @@ app.get('/api/admin/stats', verifyAdmin, async (req, res) => {
                 .map(r => r.userId.toString())
         );
 
+        const completedStudents = users.filter(u => u.ojtStatus === 'completed').length;
+
         res.json({
             totalStudents: users.length,
+            completedStudents,
             totalRecords: allRecords.length,
             totalHours: parseFloat(totalHours.toFixed(2)),
             avgHoursPerStudent: users.length ? parseFloat((totalHours / users.length).toFixed(2)) : 0,
@@ -367,6 +453,10 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
                 department: u.department || '',
                 supervisorName: u.supervisorName || '',
                 courseProgram: u.courseProgram || '',
+                ojtStatus: u.ojtStatus || 'in_progress',
+                completedAtDate: u.completedAtDate || null,
+                currentBatch: u.currentBatch || 1,
+                internshipHistory: u.internshipHistory || [],
                 totalRecords: records.length,
                 totalHours: parseFloat(totalHours.toFixed(2)),
                 lastActive: records.length ? records[0].date : null,
@@ -434,6 +524,29 @@ app.patch('/api/admin/users/:id/target', verifyAdmin, async (req, res) => {
             return res.status(404).json({ message: 'Student not found' });
         }
         res.json({ message: 'Target hours updated successfully', user });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// PATCH /api/admin/users/:id/completion — Update student OJT completion status
+app.patch('/api/admin/users/:id/completion', verifyAdmin, async (req, res) => {
+    try {
+        const { ojtStatus, completedAtDate } = req.body;
+        const statusVal = ojtStatus === 'completed' ? 'completed' : 'in_progress';
+        const dateVal = statusVal === 'completed'
+            ? (completedAtDate || new Date().toISOString().split('T')[0])
+            : null;
+
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            { ojtStatus: statusVal, completedAtDate: dateVal },
+            { new: true }
+        );
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.json({ message: 'Student completion status updated', user });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

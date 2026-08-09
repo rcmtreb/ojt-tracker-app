@@ -5,7 +5,7 @@ import {
   Clock, ArrowLeft, Sun, Moon, LogOut, Building2,
   FileSpreadsheet, Settings, User as UserIcon, Check, Loader2, Crown, Trophy,
   Medal, Hand, Code2, FileText, Palette, Wrench, ClipboardList, ShieldCheck,
-  TrendingUp, Download
+  TrendingUp, Download, History, CheckCircle2
 } from 'lucide-react';
 import { API_URL } from '../config';
 
@@ -434,6 +434,51 @@ export default function ProfileSettings() {
                       );
                     })}
                   </div>
+                </div>
+
+                {/* OJT Internship History Section */}
+                <div className="bg-white dark:bg-slate-900/80 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-6 shadow-sm mt-6">
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
+                    <History className="w-5 h-5 text-emerald-500" />
+                    <span>OJT Internship History</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mb-5">Records of completed OJT internship periods</p>
+
+                  {(!user?.internshipHistory || user.internshipHistory.length === 0) ? (
+                    <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-xs font-bold bg-slate-50/50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
+                      No previous completed internships on record yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {user.internshipHistory.map((item, idx) => (
+                        <div key={idx} className="bg-slate-50/80 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-950/60 rounded-xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-extrabold text-sm">
+                              #{item.batchNumber || (idx + 1)}
+                            </div>
+                            <div>
+                              <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">{item.companyName || 'Host Training Establishment'}</h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                {item.department ? `${item.department} · ` : ''}{item.courseProgram || ''}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="sm:text-right">
+                            <span className="inline-flex items-center gap-1 text-xs font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 rounded-lg">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {item.totalHours} hrs Completed
+                            </span>
+                            {item.completedAtDate && (
+                              <p className="text-[11px] text-slate-400 mt-1">
+                                Finished on {new Date(item.completedAtDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
