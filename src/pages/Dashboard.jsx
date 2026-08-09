@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand, Target, Flame, BarChart3, Code2, Palette, Wrench, ClipboardList, Loader2, Settings } from 'lucide-react';
+import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand, Target, Flame, BarChart3, Code2, Palette, Wrench, ClipboardList, Loader2, Settings, List, CalendarDays, Plus } from 'lucide-react';
 import ProofGalleryModal from './ProofGalleryModal';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -61,6 +61,8 @@ function Dashboard() {
     category: 'Development'
   });
   const [showModal, setShowModal] = useState(false);
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [settingsForm, setSettingsForm] = useState({
     companyName: '',
     department: '',
@@ -260,7 +262,7 @@ function Dashboard() {
     navigate('/');
   }, [navigate]);
 
-  const startEdit = (record) => {
+  const startEdit = useCallback((record) => {
     setEditingRecordId(record._id);
     setFormData({
       studentName: record.studentName || '',
@@ -275,7 +277,7 @@ function Dashboard() {
     setFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  }, []);
 
   const cancelEdit = () => {
     setEditingRecordId(null);
@@ -812,6 +814,183 @@ function Dashboard() {
       console.error('PDF Export Error:', error);
       alert('Failed to generate PDF. Check console for details.');
     }
+  };
+
+  const renderCalendarView = () => {
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+
+    const startingDayOfWeek = firstDay.getDay();
+    const totalDaysInMonth = lastDay.getDate();
+
+    const recordsByDate = {};
+    records.forEach(r => {
+      if (!r.date) return;
+      const key = new Date(r.date).toISOString().split('T')[0];
+      if (!recordsByDate[key]) recordsByDate[key] = [];
+      recordsByDate[key].push(r);
+    });
+
+    const monthName = calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const prevMonth = () => setCalendarDate(new Date(year, month - 1, 1));
+    const nextMonth = () => setCalendarDate(new Date(year, month + 1, 1));
+    const resetToToday = () => setCalendarDate(new Date());
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const cells = [];
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      cells.push({ isCurrentMonth: false, dayNum: null, dateStr: null });
+    }
+
+    for (let day = 1; day <= totalDaysInMonth; day++) {
+      const d = new Date(year, month, day);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayOfWeek = d.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      const isPast = dateStr < todayStr;
+      const dayRecords = recordsByDate[dateStr] || [];
+      const totalHrs = dayRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+
+      cells.push({
+        isCurrentMonth: true,
+        dayNum: day,
+        dateStr,
+        dayOfWeek,
+        isWeekend,
+        isPast,
+        dayRecords,
+        totalHrs
+      });
+    }
+
+    return (
+      <div className="p-6 sm:p-8 space-y-6">
+        {/* Calendar Navigation Header */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-950/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-extrabold">
+              <CalendarDays className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white leading-tight">{monthName}</h3>
+              <p className="text-xs text-slate-400">Monthly OJT Duty Visualizer</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={resetToToday}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-extrabold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            >
+              Today
+            </button>
+            <button
+              onClick={prevMonth}
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              title="Previous Month"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={nextMonth}
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              title="Next Month"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* 7-Day Grid */}
+        <div className="grid grid-cols-7 gap-2 sm:gap-3">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+            <div key={d} className={`text-center py-2 text-xs font-extrabold uppercase tracking-wider ${i === 0 || i === 6 ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>
+              {d}
+            </div>
+          ))}
+
+          {cells.map((cell, idx) => {
+            if (!cell.isCurrentMonth) {
+              return <div key={`blank-${idx}`} className="min-h-[90px] sm:min-h-[110px] rounded-2xl bg-slate-50/30 dark:bg-slate-950/20 border border-slate-100/50 dark:border-slate-800/40 opacity-40 pointer-events-none" />;
+            }
+
+            const isToday = cell.dateStr === todayStr;
+            const hasLogs = cell.dayRecords.length > 0;
+            const isMissingWeekday = !hasLogs && cell.isPast && !cell.isWeekend;
+
+            return (
+              <div
+                key={cell.dateStr}
+                className={`min-h-[90px] sm:min-h-[110px] p-2.5 rounded-2xl border transition-all flex flex-col justify-between ${
+                  isToday
+                    ? 'ring-2 ring-emerald-500/80 bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+                    : hasLogs
+                    ? 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 shadow-xs'
+                    : isMissingWeekday
+                    ? 'bg-amber-50/30 dark:bg-amber-950/10 border-amber-200/60 dark:border-amber-900/40'
+                    : 'bg-slate-50/50 dark:bg-slate-900/30 border-slate-100 dark:border-slate-800/50'
+                }`}
+              >
+                {/* Cell Header: Day Number & Indicators */}
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs font-extrabold ${isToday ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-1.5 py-0.5 rounded-md' : 'text-slate-700 dark:text-slate-300'}`}>
+                    {cell.dayNum}
+                  </span>
+
+                  {hasLogs && (
+                    <span className="text-[10px] font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 px-1.5 py-0.5 rounded-md">
+                      {cell.totalHrs.toFixed(1)}h
+                    </span>
+                  )}
+                </div>
+
+                {/* Cell Body: Log Badges or Missing Prompt */}
+                <div className="my-1 space-y-1 overflow-hidden">
+                  {hasLogs ? (
+                    cell.dayRecords.map(r => (
+                      <button
+                        key={r._id}
+                        onClick={() => startEdit(r)}
+                        className="w-full text-left p-1 rounded-lg bg-slate-50 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-100 dark:border-slate-700/60 transition-colors cursor-pointer block truncate"
+                        title={`${r.taskDescription} (${r.totalHours} hrs)`}
+                      >
+                        <p className="text-[10px] font-extrabold text-slate-800 dark:text-slate-200 truncate">{r.taskDescription || 'Duty Entry'}</p>
+                      </button>
+                    ))
+                  ) : isMissingWeekday ? (
+                    <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-1">
+                      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                      <span className="hidden sm:inline">Missing Log</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Cell Footer: Add Log Shortcut */}
+                <div>
+                  {!hasLogs && (
+                    <button
+                      onClick={() => {
+                        setFormData(prev => ({ ...prev, date: cell.dateStr }));
+                        setShowModal(true);
+                      }}
+                      className="w-full py-1 text-[10px] font-extrabold text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/30 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span className="hidden sm:inline">Log</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
 
   if (!user) return null;
@@ -1412,16 +1591,48 @@ function Dashboard() {
                 </div>
                 <h2 className="text-lg font-extrabold text-slate-800 dark:text-white tracking-tight">Activity Log Records</h2>
               </div>
-              <button 
-                onClick={exportToPDF}
-                disabled={records.length === 0}
-                className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-widest bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-350 py-3 px-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
-                <Download className="w-4 h-4 text-slate-500" /> Export DTR
-              </button>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
+                {/* View Mode Toggle */}
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                      viewMode === 'list'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <List className="w-3.5 h-3.5" />
+                    <span>List</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('calendar')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                      viewMode === 'calendar'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <CalendarDays className="w-3.5 h-3.5" />
+                    <span>Calendar</span>
+                  </button>
+                </div>
+
+                <button 
+                  onClick={exportToPDF}
+                  disabled={records.length === 0}
+                  className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-widest bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-350 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-slate-500" /> Export DTR
+                </button>
+              </div>
             </div>
 
-            <div className="overflow-x-auto w-full">
+            {viewMode === 'calendar' ? (
+              renderCalendarView()
+            ) : (
+              <>
+                <div className="overflow-x-auto w-full">
               <table className="min-w-full divide-y divide-slate-100 dark:divide-slate-800">
                 <thead className="bg-slate-50/40 dark:bg-slate-950/20">
                   <tr>
@@ -1560,7 +1771,9 @@ function Dashboard() {
                 </div>
               </div>
             )}
-          </section>
+          </>
+        )}
+      </section>
         </div>
 
         <ProofGalleryModal visible={showProofModal} images={proofImages} startIndex={proofStartIndex} onClose={() => setShowProofModal(false)} />
