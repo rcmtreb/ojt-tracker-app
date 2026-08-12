@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand, Target, Flame, BarChart3, Code2, Palette, Wrench, ClipboardList, Loader2, Settings, List, CalendarDays, Plus, CheckCircle2, X } from 'lucide-react';
+import { PlusCircle, Trash2, Download, Clock, FileText, LogOut, User as UserIcon, Calendar, Briefcase, ChevronRight, Check, Pencil, ChevronLeft, UploadCloud, Eye, Sun, Moon, AlertCircle, AlertTriangle, Sparkles, PartyPopper, Trophy, Award, Medal, Crown, Hand, Target, Flame, BarChart3, Code2, Palette, Wrench, ClipboardList, Loader2, Settings, List, CalendarDays, Plus, CheckCircle2, X, Building2 } from 'lucide-react';
 import ProofGalleryModal from './ProofGalleryModal';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -67,6 +67,7 @@ function Dashboard() {
   const [completionDateInput, setCompletionDateInput] = useState(() => new Date().toISOString().split('T')[0]);
   const [isCompleting, setIsCompleting] = useState(false);
   const [showStartNewOjtModal, setShowStartNewOjtModal] = useState(false);
+  const [selectedBatchView, setSelectedBatchView] = useState(() => user?.currentBatch || 1);
   const [newOjtForm, setNewOjtForm] = useState({
     targetHours: 486,
     companyName: '',
@@ -96,17 +97,65 @@ function Dashboard() {
   const [isLoadingRecords, setIsLoadingRecords] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
 
+  const activeViewBatchNum = selectedBatchView || user?.currentBatch || 1;
+  const isSelectedBatchCurrent = activeViewBatchNum === (user?.currentBatch || 1);
+  const selectedHistoryItem = useMemo(() => {
+    return (user?.internshipHistory || []).find(h => h.batchNumber === activeViewBatchNum);
+  }, [user?.internshipHistory, activeViewBatchNum]);
+
+  const displayTargetHours = isSelectedBatchCurrent
+    ? targetHours
+    : (selectedHistoryItem?.targetHours || 486);
+
+  const displayCompanyName = isSelectedBatchCurrent
+    ? (user?.companyName || '')
+    : (selectedHistoryItem?.companyName || '');
+
+  const displayDepartment = isSelectedBatchCurrent
+    ? (user?.department || '')
+    : (selectedHistoryItem?.department || '');
+
+  const filteredBatchRecords = useMemo(() => {
+    return records.filter(r => {
+      const b = r.internshipBatch || 1;
+      return b === activeViewBatchNum;
+    });
+  }, [records, activeViewBatchNum]);
+
+  const activeBatchHours = useMemo(() => {
+    return filteredBatchRecords.reduce((acc, rec) => acc + (rec.totalHours || 0), 0);
+  }, [filteredBatchRecords]);
+
+  const lifetimeTotalHours = useMemo(() => {
+    return records.reduce((acc, rec) => acc + (rec.totalHours || 0), 0);
+  }, [records]);
+
+  const totalAccumulatedHours = isSelectedBatchCurrent
+    ? activeBatchHours
+    : (selectedHistoryItem?.totalHours !== undefined && selectedHistoryItem.totalHours > 0
+        ? selectedHistoryItem.totalHours
+        : activeBatchHours);
+
+  const rawProgressPercent = displayTargetHours > 0 ? (totalAccumulatedHours / displayTargetHours) * 100 : 0;
+  const visualProgressPercent = Math.min(100, rawProgressPercent);
+  const isTargetExceeded = totalAccumulatedHours >= displayTargetHours;
+  const bonusOvertimeHours = Math.max(0, totalAccumulatedHours - displayTargetHours);
+  const remainingHours = Math.max(0, displayTargetHours - totalAccumulatedHours);
+
+  const displayStatus = isSelectedBatchCurrent ? user?.ojtStatus : 'completed';
+  const displayCompletedDate = isSelectedBatchCurrent ? user?.completedAtDate : selectedHistoryItem?.completedAtDate;
+
   const [currentPage, setCurrentPage] = useState(1);
   const recordsPerPage = 8;
 
-  const totalPages = useMemo(() => Math.ceil(records.length / recordsPerPage) || 1, [records.length]);
+  const totalPages = useMemo(() => Math.ceil(filteredBatchRecords.length / recordsPerPage) || 1, [filteredBatchRecords.length]);
   const validCurrentPage = Math.min(currentPage, totalPages);
   
   const indexOfLastRecord = validCurrentPage * recordsPerPage;
   const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
   const paginatedRecords = useMemo(() => {
-    return records.slice(indexOfFirstRecord, indexOfLastRecord);
-  }, [records, indexOfFirstRecord, indexOfLastRecord]);
+    return filteredBatchRecords.slice(indexOfFirstRecord, indexOfLastRecord);
+  }, [filteredBatchRecords, indexOfFirstRecord, indexOfLastRecord]);
 
   const goToPrevPage = () => {
     setCurrentPage(prev => Math.max(1, prev - 1));
@@ -390,12 +439,13 @@ function Dashboard() {
     const fetchProfile = async () => {
       try {
         const token = localStorage.getItem('token');
-        if (!token) return;
-        const res = await axios.get(`${API_URL}/user/profile`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.data) {
+        if (token) {
+          const res = await axios.get(`${API_URL}/user/profile`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
           const p = res.data;
+          setUser(p);
+          localStorage.setItem('user', JSON.stringify(p));
           setSettingsForm({
             companyName: p.companyName || '',
             department: p.department || '',
@@ -415,6 +465,13 @@ function Dashboard() {
     };
     fetchProfile();
   }, []);
+
+  useEffect(() => {
+    if (user?.currentBatch) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedBatchView(user.currentBatch);
+    }
+  }, [user?.currentBatch]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -569,14 +626,6 @@ function Dashboard() {
     }
   };
 
-  const totalAccumulatedHours = records.reduce((acc, rec) => acc + (rec.totalHours || 0), 0);
-
-  const rawProgressPercent = targetHours > 0 ? (totalAccumulatedHours / targetHours) * 100 : 0;
-  const visualProgressPercent = Math.min(100, rawProgressPercent);
-  const isTargetExceeded = totalAccumulatedHours >= targetHours;
-  const bonusOvertimeHours = Math.max(0, totalAccumulatedHours - targetHours);
-  const remainingHours = Math.max(0, targetHours - totalAccumulatedHours);
-
   const getTraineeRank = (percent) => {
     if (percent >= 100) return { title: 'Overachieving Master', icon: Crown, iconColor: 'text-amber-500', badgeBg: 'bg-gradient-to-r from-amber-500/20 to-emerald-500/20 border-amber-500/30 text-amber-600 dark:text-amber-300' };
     if (percent >= 75) return { title: 'OJT Specialist', icon: Trophy, iconColor: 'text-emerald-500', badgeBg: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-300' };
@@ -595,8 +644,8 @@ function Dashboard() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTargetInput(String(targetHours));
-  }, [targetHours]);
+    setTargetInput(String(displayTargetHours));
+  }, [displayTargetHours]);
 
   useEffect(() => {
     // If browser restored focus to edit button after refresh, blur it on mount to avoid visible focus box
@@ -624,24 +673,30 @@ function Dashboard() {
 
   const startEditTarget = () => setEditingTarget(true);
   const cancelEditTarget = () => {
-    setTargetInput(String(targetHours));
+    setTargetInput(String(displayTargetHours));
     setEditingTarget(false);
   };
 
   const saveTarget = async () => {
     const num = parseFloat(targetInput);
     if (!isNaN(num) && num > 0) {
-      setTargetHours(num);
-      localStorage.setItem('targetHours', String(num));
+      if (isSelectedBatchCurrent) {
+        setTargetHours(num);
+        localStorage.setItem('targetHours', String(num));
+      }
       setEditingTarget(false);
       setTargetSaved(true);
       setTimeout(() => setTargetSaved(false), 2000);
       try {
         const token = localStorage.getItem('token');
         if (token) {
-          await axios.patch(`${API_URL}/user/target`, { targetHours: num }, {
+          const res = await axios.patch(`${API_URL}/user/target`, { targetHours: num, batchNumber: activeViewBatchNum }, {
             headers: { Authorization: `Bearer ${token}` }
           });
+          if (res.data?.user) {
+            setUser(res.data.user);
+            localStorage.setItem('user', JSON.stringify(res.data.user));
+          }
         }
       } catch {
         /* silent fallback */
@@ -668,7 +723,7 @@ function Dashboard() {
   const nextMonth = () => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1));
 
   const hasRecord = (day) => {
-    return records.some(rec => {
+    return filteredBatchRecords.some(rec => {
       const recDate = new Date(rec.date);
       return recDate.getDate() === day && 
              recDate.getMonth() === viewDate.getMonth() && 
@@ -681,7 +736,7 @@ function Dashboard() {
       const doc = new jsPDF();
       
       // Sort records chronologically (oldest date at top, latest at bottom)
-      const sortedRecords = [...records].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const sortedRecords = [...filteredBatchRecords].sort((a, b) => new Date(a.date) - new Date(b.date));
       
       const studentNameStr = formData.studentName || user?.name || 'Student Trainee';
       const studentEmailStr = user?.email || 'N/A';
@@ -888,7 +943,7 @@ function Dashboard() {
     const totalDaysInMonth = lastDay.getDate();
 
     const recordsByDate = {};
-    records.forEach(r => {
+    filteredBatchRecords.forEach(r => {
       if (!r.date) return;
       const key = new Date(r.date).toISOString().split('T')[0];
       if (!recordsByDate[key]) recordsByDate[key] = [];
@@ -1163,8 +1218,29 @@ function Dashboard() {
             <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50/50 dark:bg-emerald-900/5 rounded-full -mr-32 -mt-32 transition-transform duration-700 group-hover:scale-105"></div>
             
             <div className="relative z-10">
+              {/* Batch Selector Dropdown if multiple batches exist */}
+              {(user?.currentBatch > 1 || (user?.internshipHistory || []).length > 0) && (
+                <div className="mb-5 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300">Select OJT Internship View:</span>
+                  <select
+                    value={activeViewBatchNum}
+                    onChange={e => setSelectedBatchView(parseInt(e.target.value))}
+                    className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-extrabold text-emerald-600 dark:text-emerald-400 outline-none cursor-pointer"
+                  >
+                    <option value={user.currentBatch || 1}>
+                      📌 OJT Batch #{user.currentBatch || 1} (Current Active OJT)
+                    </option>
+                    {(user.internshipHistory || []).map(h => (
+                      <option key={h.batchNumber} value={h.batchNumber}>
+                        📁 OJT Batch #{h.batchNumber} (Completed: {h.companyName || 'Past OJT'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* OJT Completed Banner */}
-              {user?.ojtStatus === 'completed' ? (
+              {displayStatus === 'completed' ? (
                 <div className="mb-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/60 rounded-xl flex items-center justify-center text-emerald-600 dark:text-emerald-400">
@@ -1173,7 +1249,7 @@ function Dashboard() {
                     <div>
                       <p className="font-extrabold text-sm text-emerald-900 dark:text-emerald-200">OJT Training Completed & Verified</p>
                       <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                        Official Completion Date: <span className="font-bold">{user.completedAtDate ? new Date(user.completedAtDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Verified'}</span>
+                        Official Completion Date: <span className="font-bold">{displayCompletedDate ? new Date(displayCompletedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Verified'}</span>
                       </p>
                     </div>
                   </div>
@@ -1225,6 +1301,16 @@ function Dashboard() {
                 </div>
               ) : null}
 
+              {displayCompanyName && (
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-extrabold border border-slate-200/60 dark:border-slate-700/60">
+                    <Building2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>{displayCompanyName}</span>
+                    {displayDepartment && <span className="text-slate-400 font-normal">· {displayDepartment}</span>}
+                  </span>
+                </div>
+              )}
+
               <div className="flex flex-wrap items-center gap-3 mb-2">
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
                   Hello, {user?.name ? user.name.split(' ')[0] : 'Student'}! 
@@ -1256,6 +1342,11 @@ function Dashboard() {
                 <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest pt-1">
                   <div className="flex flex-wrap gap-2">
                     <span className="bg-slate-50 dark:bg-slate-950 px-2 py-1 rounded-md text-slate-500 dark:text-slate-450 font-extrabold">{totalAccumulatedHours.toFixed(1)} HRS LOGGED</span>
+                    {user?.currentBatch > 1 && (
+                      <span className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 px-2 py-1 rounded-md text-emerald-600 dark:text-emerald-400 font-extrabold">
+                        LIFETIME TOTAL: {lifetimeTotalHours.toFixed(1)} HRS
+                      </span>
+                    )}
                     {isTargetExceeded ? (
                       <span className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 px-2 py-1 rounded-md text-amber-600 dark:text-amber-400 font-extrabold flex items-center gap-1">
                         <Sparkles className="w-3 h-3 text-amber-500" />
@@ -1287,7 +1378,7 @@ function Dashboard() {
                       </form>
                     ) : (
                       <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 px-2 py-1 rounded-md">
-                        <span className="text-slate-500 dark:text-slate-450 font-extrabold">TARGET: {targetHours} HRS</span>
+                        <span className="text-slate-500 dark:text-slate-450 font-extrabold">TARGET: {displayTargetHours} HRS</span>
                         <button ref={editButtonRef} onClick={startEditTarget} className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:underline font-extrabold cursor-pointer">Edit</button>
                         {targetSaved && (
                           <span className="ml-1 inline-flex items-center text-green-600">
@@ -1636,7 +1727,7 @@ function Dashboard() {
 
             {(() => {
               const skillMatrixData = SKILL_CATEGORIES.map(cat => {
-                const categoryRecords = records.filter(r => (r.category || 'Development') === cat.id);
+                const categoryRecords = filteredBatchRecords.filter(r => (r.category || 'Development') === cat.id);
                 const categoryHours = categoryRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
                 const percent = totalAccumulatedHours > 0 ? (categoryHours / totalAccumulatedHours) * 100 : 0;
                 return { ...cat, hours: categoryHours, percent };
@@ -1656,7 +1747,7 @@ function Dashboard() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             {SKILL_CATEGORIES.map(cat => {
-              const categoryRecords = records.filter(r => (r.category || 'Development') === cat.id);
+              const categoryRecords = filteredBatchRecords.filter(r => (r.category || 'Development') === cat.id);
               const categoryHours = categoryRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
               const percent = totalAccumulatedHours > 0 ? (categoryHours / totalAccumulatedHours) * 100 : 0;
               return (

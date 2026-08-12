@@ -140,6 +140,8 @@ export default function AdminDashboard() {
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerViewTab, setDrawerViewTab] = useState('logs'); // 'logs' | 'calendar'
   const [drawerCalendarDate, setDrawerCalendarDate] = useState(() => new Date());
+  const [cardSelectedBatch, setCardSelectedBatch] = useState({});
+  const [drawerBatchFilter, setDrawerBatchFilter] = useState('all');
   const [exportingId, setExportingId] = useState(null);
   const [exportingAll, setExportingAll] = useState(false);
   const [studentPage, setStudentPage] = useState(1);
@@ -228,7 +230,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleUpdateTarget = async (studentId, newTarget) => {
+  const handleUpdateTarget = async (studentId, newTarget, batchNumber) => {
     const parsed = parseFloat(newTarget);
     if (isNaN(parsed) || parsed <= 0) {
       setToastMessage({ type: 'error', text: 'Target hours must be a positive number.' });
@@ -236,14 +238,35 @@ export default function AdminDashboard() {
     }
     setIsUpdatingTarget(true);
     try {
-      await axios.patch(`${API_URL}/admin/users/${studentId}/target`, { targetHours: parsed }, { headers: authHeader() });
+      await axios.patch(`${API_URL}/admin/users/${studentId}/target`, { targetHours: parsed, batchNumber }, { headers: authHeader() });
       setToastMessage({ type: 'success', text: `Target hours updated to ${parsed} hrs!` });
       setEditingTargetId(null);
 
       // Real-time local state update
-      setStudents(prev => prev.map(s => s._id === studentId ? { ...s, targetHours: parsed } : s));
+      setStudents(prev => prev.map(s => {
+        if (s._id === studentId) {
+          const bNum = batchNumber !== undefined ? parseInt(batchNumber) : (s.currentBatch || 1);
+          if (bNum === (s.currentBatch || 1)) {
+            return { ...s, targetHours: parsed };
+          } else {
+            const updatedHist = (s.internshipHistory || []).map(h => h.batchNumber === bNum ? { ...h, targetHours: parsed } : h);
+            return { ...s, internshipHistory: updatedHist };
+          }
+        }
+        return s;
+      }));
+
       if (drawerStudent?._id === studentId) {
-        setDrawerStudent(prev => prev ? { ...prev, targetHours: parsed } : null);
+        setDrawerStudent(prev => {
+          if (!prev) return null;
+          const bNum = batchNumber !== undefined ? parseInt(batchNumber) : (prev.currentBatch || 1);
+          if (bNum === (prev.currentBatch || 1)) {
+            return { ...prev, targetHours: parsed };
+          } else {
+            const updatedHist = (prev.internshipHistory || []).map(h => h.batchNumber === bNum ? { ...h, targetHours: parsed } : h);
+            return { ...prev, internshipHistory: updatedHist };
+          }
+        });
       }
     } catch (err) {
       setToastMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update target hours.' });
@@ -449,7 +472,10 @@ export default function AdminDashboard() {
             {list.map(student => {
               const target = student.targetHours || 486;
               const pct = Math.min((student.totalHours / target) * 100, 100);
-              const rank = getRankBadge(pct);
+              // Rank uses lifetime hours so a new batch doesn't reset rank to Rookie
+              const lifetimeTarget = (student.targetHours || 486) + (student.internshipHistory || []).reduce((sum, h) => sum + (h.targetHours || 486), 0);
+              const lifetimePct = lifetimeTarget > 0 ? Math.min((student.lifetimeTotalHours / lifetimeTarget) * 100, 100) : 0;
+              const rank = getRankBadge(lifetimePct);
               const RankIcon = rank.icon;
               return (
                 <tr key={student._id} className="border-b border-slate-50 dark:border-slate-800/40 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors">
@@ -542,9 +568,40 @@ export default function AdminDashboard() {
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               {list.map(student => {
-                const target = student.targetHours || 486;
-                const pct = Math.min((student.totalHours / target) * 100, 100);
-                const rank = getRankBadge(pct);
+                const activeBatchNum = cardSelectedBatch[student._id] || student.currentBatch || 1;
+                const historyList = student.internshipHistory || [];
+                const hasMultipleBatches = historyList.length > 0 || (student.currentBatch && student.currentBatch > 1);
+
+                let displayCompany = student.companyName;
+                let displayDept = student.department;
+                let displaySupervisor = student.supervisorName;
+                let displayCourse = student.courseProgram;
+                let displayTarget = student.targetHours || 486;
+                let displayWorked = student.currentBatchHours !== undefined ? student.currentBatchHours : student.totalHours;
+                let displayCompleted = student.ojtStatus === 'completed';
+                let displayCompletedDate = student.completedAtDate;
+                let displayRecordCount = student.totalRecords;
+
+                if (activeBatchNum !== (student.currentBatch || 1)) {
+                  const histItem = historyList.find(h => h.batchNumber === activeBatchNum);
+                  if (histItem) {
+                    displayCompany = histItem.companyName || displayCompany;
+                    displayDept = histItem.department || displayDept;
+                    displaySupervisor = histItem.supervisorName || displaySupervisor;
+                    displayCourse = histItem.courseProgram || displayCourse;
+                    displayTarget = histItem.targetHours || displayTarget;
+                    displayWorked = histItem.totalHours !== undefined ? histItem.totalHours : 0;
+                    displayRecordCount = histItem.recordCount !== undefined ? histItem.recordCount : '—';
+                    displayCompleted = true;
+                    displayCompletedDate = histItem.completedAtDate;
+                  }
+                }
+
+                const pct = Math.min((displayWorked / displayTarget) * 100, 100);
+                // Rank uses lifetime hours so a new batch doesn't reset rank to Rookie
+                const lifetimeTarget = (student.targetHours || 486) + (student.internshipHistory || []).reduce((sum, h) => sum + (h.targetHours || 486), 0);
+                const lifetimePct = lifetimeTarget > 0 ? Math.min((student.lifetimeTotalHours / lifetimeTarget) * 100, 100) : 0;
+                const rank = getRankBadge(lifetimePct);
                 const RankIcon = rank.icon;
 
                 return (
@@ -579,15 +636,36 @@ export default function AdminDashboard() {
                         </div>
                       </div>
 
+                      {/* Interactive Batch Selector Dropdown if multiple batches */}
+                      {hasMultipleBatches && (
+                        <div className="flex items-center justify-between gap-2 mb-4 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <span className="text-xs font-extrabold text-slate-600 dark:text-slate-300">Select OJT Batch:</span>
+                          <select
+                            value={activeBatchNum}
+                            onChange={e => setCardSelectedBatch(prev => ({ ...prev, [student._id]: parseInt(e.target.value) }))}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-emerald-600 dark:text-emerald-400 outline-none cursor-pointer"
+                          >
+                            <option value={student.currentBatch || 1}>
+                              OJT Batch #{student.currentBatch || 1} (Current: {student.companyName || 'Active'})
+                            </option>
+                            {historyList.map(h => (
+                              <option key={h.batchNumber} value={h.batchNumber}>
+                                OJT Batch #{h.batchNumber} (Completed: {h.companyName || 'Past OJT'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
                       {/* Completion Status Badge if Completed */}
-                      {student.ojtStatus === 'completed' && (
+                      {displayCompleted && (
                         <div className="flex items-center gap-2 mb-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-2.5 rounded-xl">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                           <div className="text-xs font-extrabold text-emerald-800 dark:text-emerald-200">
                             <span>OJT Completed</span>
-                            {student.completedAtDate && (
+                            {displayCompletedDate && (
                               <span className="font-normal text-[11px] text-emerald-600 dark:text-emerald-400 ml-1.5">
-                                ({new Date(student.completedAtDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})
+                                ({new Date(displayCompletedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})
                               </span>
                             )}
                           </div>
@@ -601,7 +679,7 @@ export default function AdminDashboard() {
                             <Building2 className="w-3 h-3 text-emerald-500" />
                             <span>Company / HTE</span>
                           </div>
-                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{student.companyName || 'Not configured'}</p>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{displayCompany || 'Not configured'}</p>
                         </div>
 
                         <div className="bg-slate-50/80 dark:bg-slate-800/40 rounded-xl p-3 border border-slate-100 dark:border-slate-800/60">
@@ -609,7 +687,7 @@ export default function AdminDashboard() {
                             <GraduationCap className="w-3 h-3 text-purple-500" />
                             <span>Course & Year</span>
                           </div>
-                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{student.courseProgram || 'Not configured'}</p>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{displayCourse || 'Not configured'}</p>
                         </div>
 
                         <div className="bg-slate-50/80 dark:bg-slate-800/40 rounded-xl p-3 border border-slate-100 dark:border-slate-800/60">
@@ -617,7 +695,7 @@ export default function AdminDashboard() {
                             <Briefcase className="w-3 h-3 text-teal-500" />
                             <span>Department</span>
                           </div>
-                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{student.department || 'Not configured'}</p>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{displayDept || 'Not configured'}</p>
                         </div>
 
                         <div className="bg-slate-50/80 dark:bg-slate-800/40 rounded-xl p-3 border border-slate-100 dark:border-slate-800/60">
@@ -625,21 +703,24 @@ export default function AdminDashboard() {
                             <Users className="w-3 h-3 text-amber-500" />
                             <span>Supervisor</span>
                           </div>
-                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{student.supervisorName || 'Not configured'}</p>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">{displaySupervisor || 'Not configured'}</p>
                         </div>
                       </div>
 
                       {/* Duty Hours & Responsive Progress */}
                       <div className="mb-5 bg-slate-50/50 dark:bg-slate-800/30 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/60">
                         <div className="flex items-center justify-between text-xs font-extrabold mb-1.5">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">{student.totalRecords} duty records</span>
-                          <span className="text-slate-900 dark:text-white">{student.totalHours} / {target} hrs <span className="text-emerald-600 dark:text-emerald-400">({pct.toFixed(1)}%)</span></span>
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{displayRecordCount} duty records</span>
+                          <span className="text-slate-900 dark:text-white">{displayWorked} / {displayTarget} hrs <span className="text-emerald-600 dark:text-emerald-400">({pct.toFixed(1)}%)</span></span>
                         </div>
                         <div className="bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden mb-2">
                           <div className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500" style={{ width: `${pct}%` }} />
                         </div>
                         <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500 font-medium">
                           <span>Last Active: {student.lastActive ? new Date(student.lastActive).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No records'}</span>
+                          {student.lifetimeTotalHours !== undefined && (
+                            <span className="font-bold text-slate-600 dark:text-slate-400">Total Lifetime: {student.lifetimeTotalHours} hrs</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -658,7 +739,8 @@ export default function AdminDashboard() {
                         onClick={() => {
                           openDrawer(student);
                           setEditingTargetId(student._id);
-                          setTargetInputVal(String(student.targetHours || 486));
+                          setTargetInputVal(String(displayTarget || 486));
+                          setDrawerBatchFilter(String(activeBatchNum));
                         }}
                         className="px-3 py-2 rounded-xl text-xs font-extrabold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
                         title="Edit Target Hours"
@@ -777,9 +859,9 @@ export default function AdminDashboard() {
   const rankPieData = (() => {
     const counts = { 'Overachieving Master': 0, 'OJT Specialist': 0, 'Dedicated Apprentice': 0, 'Rookie Trainee': 0 };
     students.forEach(s => {
-      const target = s.targetHours || 486;
-      const pct = (s.totalHours / target) * 100;
-      const rank = pct >= 100 ? 'Overachieving Master' : pct >= 75 ? 'OJT Specialist' : pct >= 25 ? 'Dedicated Apprentice' : 'Rookie Trainee';
+      const lifetimeTarget = (s.targetHours || 486) + (s.internshipHistory || []).reduce((sum, h) => sum + (h.targetHours || 486), 0);
+      const lifetimePct = lifetimeTarget > 0 ? (s.lifetimeTotalHours / lifetimeTarget) * 100 : 0;
+      const rank = lifetimePct >= 100 ? 'Overachieving Master' : lifetimePct >= 75 ? 'OJT Specialist' : lifetimePct >= 25 ? 'Dedicated Apprentice' : 'Rookie Trainee';
       counts[rank]++;
     });
     return Object.entries(counts).filter(([, v]) => v > 0).map(([name, value]) => ({ name, value }));
@@ -953,7 +1035,10 @@ export default function AdminDashboard() {
             {students.map(student => {
               const target = student.targetHours || 486;
               const pct = Math.min((student.totalHours / target) * 100, 100);
-              const rank = getRankBadge(pct);
+              // Rank uses lifetime hours so a new batch doesn't reset rank to Rookie
+              const lifetimeTarget = (student.targetHours || 486) + (student.internshipHistory || []).reduce((sum, h) => sum + (h.targetHours || 486), 0);
+              const lifetimePct = lifetimeTarget > 0 ? Math.min((student.lifetimeTotalHours / lifetimeTarget) * 100, 100) : 0;
+              const rank = getRankBadge(lifetimePct);
               const RankIcon = rank.icon;
               return (
                 <div key={student._id} className="bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/70 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
@@ -1219,10 +1304,16 @@ export default function AdminDashboard() {
               ) : (
                 <>
                   {/* Target Hours Edit Card */}
-                  <div className="bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl p-4 mb-6 flex items-center justify-between gap-3">
+                  <div className="bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl p-4 mb-4 flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Required Target Hours</p>
-                      <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">{drawerStudent.targetHours || 486} <span className="text-slate-400 font-normal text-xs">hrs target</span></p>
+                      {(() => {
+                        const activeDrawerBatchNum = drawerBatchFilter === 'all' ? (drawerStudent.currentBatch || 1) : parseInt(drawerBatchFilter);
+                        const displayedTarget = activeDrawerBatchNum === (drawerStudent.currentBatch || 1)
+                          ? (drawerStudent.targetHours || 486)
+                          : ((drawerStudent.internshipHistory || []).find(h => h.batchNumber === activeDrawerBatchNum)?.targetHours || 486);
+                        return <p className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">{displayedTarget} <span className="text-slate-400 font-normal text-xs">hrs target</span></p>;
+                      })()}
                     </div>
                     {editingTargetId === drawerStudent._id ? (
                       <div className="flex items-center gap-2">
@@ -1234,7 +1325,7 @@ export default function AdminDashboard() {
                           placeholder="Hours"
                         />
                         <button
-                          onClick={() => handleUpdateTarget(drawerStudent._id, targetInputVal)}
+                          onClick={() => handleUpdateTarget(drawerStudent._id, targetInputVal, drawerBatchFilter === 'all' ? drawerStudent.currentBatch : parseInt(drawerBatchFilter))}
                           disabled={isUpdatingTarget}
                           className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all disabled:opacity-50 cursor-pointer"
                         >
@@ -1251,7 +1342,11 @@ export default function AdminDashboard() {
                       <button
                         onClick={() => {
                           setEditingTargetId(drawerStudent._id);
-                          setTargetInputVal(String(drawerStudent.targetHours || 486));
+                          const activeDrawerBatchNum = drawerBatchFilter === 'all' ? (drawerStudent.currentBatch || 1) : parseInt(drawerBatchFilter);
+                          const activeDrawerTarget = activeDrawerBatchNum === (drawerStudent.currentBatch || 1)
+                            ? (drawerStudent.targetHours || 486)
+                            : ((drawerStudent.internshipHistory || []).find(h => h.batchNumber === activeDrawerBatchNum)?.targetHours || 486);
+                          setTargetInputVal(String(activeDrawerTarget));
                         }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-900/40 hover:bg-emerald-200/60 dark:hover:bg-emerald-900/60 transition-all cursor-pointer"
                       >
@@ -1261,47 +1356,91 @@ export default function AdminDashboard() {
                     )}
                   </div>
 
-                  {/* Stat chips */}
-                  <div className="grid grid-cols-3 gap-3 mb-6">
-                    {[
-                      { label: 'Records', value: drawerStudent.totalRecords },
-                      { label: 'Total Hours', value: `${drawerStudent.totalHours}` },
-                      { label: 'Progress', value: `${Math.min((drawerStudent.totalHours / (drawerStudent.targetHours || 486)) * 100, 999).toFixed(1)}%` },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 rounded-xl p-3 text-center">
-                        <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{label}</p>
-                        <p className="text-lg font-extrabold text-slate-900 dark:text-white">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Skill breakdown */}
-                  {Object.keys(drawerStudent.categories || {}).length > 0 && (
-                    <div className="mb-6">
-                      <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Skill Competency</p>
-                      <div className="space-y-2.5">
-                        {SKILL_CATEGORIES.filter(c => drawerStudent.categories?.[c.id]).map(cat => {
-                          const hrs = drawerStudent.categories[cat.id] || 0;
-                          const catPct = drawerStudent.totalHours > 0 ? (hrs / drawerStudent.totalHours) * 100 : 0;
-                          const Icon = cat.icon;
-                          return (
-                            <div key={cat.id}>
-                              <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400">
-                                  <Icon className="w-3 h-3" />
-                                  {cat.label}
-                                </div>
-                                <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400">{parseFloat(hrs).toFixed(1)} hrs</span>
-                              </div>
-                              <div className="bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                                <div className={`h-1.5 rounded-full bg-gradient-to-r ${cat.bar} transition-all`} style={{ width: `${catPct}%` }} />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                  {/* Drawer Batch Filter — moved to top */}
+                  {(drawerStudent.currentBatch > 1 || (drawerStudent.internshipHistory || []).length > 0) && (
+                    <div className="flex items-center justify-between mb-4 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                      <span className="text-xs font-extrabold text-slate-600 dark:text-slate-300">OJT Batch:</span>
+                      <select
+                        value={drawerBatchFilter}
+                        onChange={e => { setDrawerBatchFilter(e.target.value); setDrawerPage(1); }}
+                        className="px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-emerald-600 dark:text-emerald-400 outline-none cursor-pointer"
+                      >
+                        <option value="all">All Batches (Lifetime)</option>
+                        <option value={drawerStudent.currentBatch}>OJT Batch #{drawerStudent.currentBatch} (Current)</option>
+                        {(drawerStudent.internshipHistory || []).map(h => (
+                          <option key={h.batchNumber} value={h.batchNumber}>OJT Batch #{h.batchNumber} ({h.companyName || 'Completed'})</option>
+                        ))}
+                      </select>
                     </div>
                   )}
+
+                  {/* Batch-filtered summary chips — computed here so skills also use it */}
+                  {(() => {
+                    const batchFilteredRecs = drawerRecords.filter(r => {
+                      if (drawerBatchFilter === 'all') return true;
+                      return (r.internshipBatch || 1) === parseInt(drawerBatchFilter);
+                    });
+                    const batchFilteredHours = batchFilteredRecs.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+                    const activeDrawerBatchNum = drawerBatchFilter === 'all' ? (drawerStudent.currentBatch || 1) : parseInt(drawerBatchFilter);
+                    const batchTarget = activeDrawerBatchNum === (drawerStudent.currentBatch || 1)
+                      ? (drawerStudent.targetHours || 486)
+                      : ((drawerStudent.internshipHistory || []).find(h => h.batchNumber === activeDrawerBatchNum)?.targetHours || 486);
+                    const batchPct = batchTarget > 0 ? Math.min((batchFilteredHours / batchTarget) * 100, 999) : 0;
+
+                    // Per-batch skill breakdown
+                    const batchCategories = {};
+                    batchFilteredRecs.forEach(r => {
+                      if (r.category) {
+                        batchCategories[r.category] = (batchCategories[r.category] || 0) + (r.totalHours || 0);
+                      }
+                    });
+
+                    return (
+                      <>
+                        {/* Stat chips */}
+                        <div className="grid grid-cols-3 gap-3 mb-6">
+                          {[
+                            { label: 'Records', value: batchFilteredRecs.length },
+                            { label: drawerBatchFilter === 'all' ? 'Total Hours' : 'Batch Hours', value: batchFilteredHours.toFixed(1) },
+                            { label: 'Progress', value: `${batchPct.toFixed(1)}%` },
+                          ].map(({ label, value }) => (
+                            <div key={label} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 rounded-xl p-3 text-center">
+                              <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{label}</p>
+                              <p className="text-lg font-extrabold text-slate-900 dark:text-white">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Skill breakdown — batch-filtered */}
+                        {Object.keys(batchCategories).length > 0 && (
+                          <div className="mb-6">
+                            <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Skill Competency</p>
+                            <div className="space-y-2.5">
+                              {SKILL_CATEGORIES.filter(c => batchCategories[c.id]).map(cat => {
+                                const hrs = batchCategories[cat.id] || 0;
+                                const catPct = batchFilteredHours > 0 ? (hrs / batchFilteredHours) * 100 : 0;
+                                const Icon = cat.icon;
+                                return (
+                                  <div key={cat.id}>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400">
+                                        <Icon className="w-3 h-3" />
+                                        {cat.label}
+                                      </div>
+                                      <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400">{parseFloat(hrs).toFixed(1)} hrs</span>
+                                    </div>
+                                    <div className="bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                      <div className={`h-1.5 rounded-full bg-gradient-to-r ${cat.bar} transition-all`} style={{ width: `${catPct}%` }} />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
 
                   {/* Drawer Tab Switcher */}
                   <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl mb-4 border border-slate-200/60 dark:border-slate-700/60">
@@ -1331,6 +1470,11 @@ export default function AdminDashboard() {
 
                   {/* Drawer Tab Content */}
                   {(() => {
+                    const filteredRecords = drawerRecords.filter(r => {
+                      if (drawerBatchFilter === 'all') return true;
+                      return (r.internshipBatch || 1) === parseInt(drawerBatchFilter);
+                    });
+
                     if (drawerViewTab === 'calendar') {
                       const yr = drawerCalendarDate.getFullYear();
                       const mo = drawerCalendarDate.getMonth();
@@ -1340,7 +1484,7 @@ export default function AdminDashboard() {
                       const daysInMo = lDay.getDate();
 
                       const dateMap = {};
-                      drawerRecords.forEach(r => {
+                      filteredRecords.forEach(r => {
                         if (!r.date) return;
                         const k = new Date(r.date).toISOString().split('T')[0];
                         if (!dateMap[k]) dateMap[k] = [];
@@ -1409,21 +1553,21 @@ export default function AdminDashboard() {
                     }
 
                     const DRAWER_PER_PAGE = 6;
-                    const totalPages = Math.ceil(drawerRecords.length / DRAWER_PER_PAGE) || 1;
+                    const totalPages = Math.ceil(filteredRecords.length / DRAWER_PER_PAGE) || 1;
                     const start = (drawerPage - 1) * DRAWER_PER_PAGE;
-                    const paginated = drawerRecords.slice(start, start + DRAWER_PER_PAGE);
+                    const paginated = filteredRecords.slice(start, start + DRAWER_PER_PAGE);
 
                     return (
                       <div>
                         <div className="flex items-center justify-between mb-3">
-                          <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Duty Log Records ({drawerRecords.length})</p>
+                          <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Duty Log Records ({filteredRecords.length})</p>
                           {totalPages > 1 && (
                             <span className="text-[10px] font-bold text-slate-400">Page {drawerPage} of {totalPages}</span>
                           )}
                         </div>
 
-                        {drawerRecords.length === 0 ? (
-                          <div className="text-center py-10 text-slate-400 dark:text-slate-500 text-sm font-medium">No records logged yet.</div>
+                        {filteredRecords.length === 0 ? (
+                          <div className="text-center py-10 text-slate-400 dark:text-slate-500 text-sm font-medium">No records logged for this filter yet.</div>
                         ) : (
                           <div className="space-y-2">
                             {paginated.map(r => (

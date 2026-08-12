@@ -154,22 +154,32 @@ app.get('/api/user/profile', verifyToken, async (req, res) => {
     }
 });
 
-// User Target Sync Route
+// User Target Sync Route (Batch-aware)
 app.patch('/api/user/target', verifyToken, async (req, res) => {
     try {
-        const { targetHours } = req.body;
+        const { targetHours, batchNumber } = req.body;
         const parsed = parseFloat(targetHours);
         if (isNaN(parsed) || parsed <= 0) {
             return res.status(400).json({ message: 'Target hours must be a positive number' });
         }
-        const user = await User.findByIdAndUpdate(
-            req.userId,
-            { targetHours: parsed },
-            { new: true }
-        );
+        const user = await User.findById(req.userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
+
+        const bNum = batchNumber !== undefined ? parseInt(batchNumber) : (user.currentBatch || 1);
+        if (bNum === (user.currentBatch || 1)) {
+            user.targetHours = parsed;
+        } else {
+            user.internshipHistory = (user.internshipHistory || []).map(h => {
+                if (h.batchNumber === bNum) {
+                    return { ...h, targetHours: parsed };
+                }
+                return h;
+            });
+        }
+
+        await user.save();
         res.json({ message: 'Target hours updated', user });
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -276,7 +286,11 @@ app.post('/api/user/start-new-ojt', verifyToken, async (req, res) => {
 // Records Routes
 app.get('/api/records', verifyToken, async (req, res) => {
     try {
-        const records = await Record.find({ userId: req.userId, isDeleted: { $ne: true } }).sort({ date: -1 });
+        const filter = { userId: req.userId, isDeleted: { $ne: true } };
+        if (req.query.batch) {
+            filter.internshipBatch = parseInt(req.query.batch);
+        }
+        const records = await Record.find(filter).sort({ date: -1 });
         res.json(records);
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -436,13 +450,30 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
         const users = await User.find({ isDeleted: { $ne: true }, email: { $ne: ADMIN_EMAIL } }).lean();
         const summaries = await Promise.all(users.map(async (u) => {
             const records = await Record.find({ userId: u._id, isDeleted: { $ne: true } }).sort({ date: -1 }).lean();
-            const totalHours = records.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+            const currentBatchNum = u.currentBatch || 1;
+            const currentBatchRecords = records.filter(r => (r.internshipBatch || 1) === currentBatchNum);
+            const currentBatchHours = currentBatchRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+            const lifetimeTotalHours = records.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+
             const categories = {};
             records.forEach(r => {
                 if (r.category) {
                     categories[r.category] = (categories[r.category] || 0) + (r.totalHours || 0);
                 }
             });
+
+            // Rebuild internshipHistory with live-calculated hours per batch from actual records
+            // This ensures hours are accurate even if the snapshot saved at re-enrollment was stale
+            const liveInternshipHistory = (u.internshipHistory || []).map(h => {
+                const batchRecs = records.filter(r => (r.internshipBatch || 1) === h.batchNumber);
+                const batchHours = batchRecs.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+                return {
+                    ...h,
+                    totalHours: parseFloat(batchHours.toFixed(2)),
+                    recordCount: batchRecs.length
+                };
+            });
+
             return {
                 _id: u._id,
                 name: u.name,
@@ -456,10 +487,12 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
                 ojtStatus: u.ojtStatus || 'in_progress',
                 completedAtDate: u.completedAtDate || null,
                 currentBatch: u.currentBatch || 1,
-                internshipHistory: u.internshipHistory || [],
-                totalRecords: records.length,
-                totalHours: parseFloat(totalHours.toFixed(2)),
-                lastActive: records.length ? records[0].date : null,
+                internshipHistory: liveInternshipHistory,
+                totalRecords: currentBatchRecords.length,
+                totalHours: parseFloat(currentBatchHours.toFixed(2)),
+                currentBatchHours: parseFloat(currentBatchHours.toFixed(2)),
+                lifetimeTotalHours: parseFloat(lifetimeTotalHours.toFixed(2)),
+                lastActive: currentBatchRecords.length ? currentBatchRecords[0].date : (records.length ? records[0].date : null),
                 categories
             };
         }));
@@ -507,23 +540,33 @@ app.get('/api/admin/users/:id/records', verifyAdmin, async (req, res) => {
     }
 });
 
-// PATCH /api/admin/users/:id/target — Update student target hours
+// PATCH /api/admin/users/:id/target — Update student target hours for a specific batch
 app.patch('/api/admin/users/:id/target', verifyAdmin, async (req, res) => {
     try {
-        const { targetHours } = req.body;
+        const { targetHours, batchNumber } = req.body;
         const parsed = parseFloat(targetHours);
         if (isNaN(parsed) || parsed <= 0) {
             return res.status(400).json({ message: 'Target hours must be a positive number' });
         }
-        const user = await User.findByIdAndUpdate(
-            req.params.id,
-            { targetHours: parsed },
-            { new: true }
-        );
+        const user = await User.findById(req.params.id);
         if (!user) {
             return res.status(404).json({ message: 'Student not found' });
         }
-        res.json({ message: 'Target hours updated successfully', user });
+
+        const bNum = batchNumber !== undefined ? parseInt(batchNumber) : (user.currentBatch || 1);
+        if (bNum === (user.currentBatch || 1)) {
+            user.targetHours = parsed;
+        } else {
+            user.internshipHistory = (user.internshipHistory || []).map(h => {
+                if (h.batchNumber === bNum) {
+                    return { ...h, targetHours: parsed };
+                }
+                return h;
+            });
+        }
+
+        await user.save();
+        res.json({ message: 'Target hours updated successfully for batch', user });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
