@@ -91,7 +91,7 @@ function Login() {
         <div className="relative z-10 animate-slide-up">
           <div className="inline-flex items-center gap-3 bg-slate-100/80 dark:bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-slate-200 dark:border-white/10 mb-6 lg:mb-10">
             <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-emerald-700 dark:text-emerald-300 text-xs font-semibold uppercase tracking-widest">OJT TRACKER V1.4.0</span>
+            <span className="text-emerald-700 dark:text-emerald-300 text-xs font-semibold uppercase tracking-widest">OJT TRACKER V1.5.0</span>
           </div>
           <h1 className="text-3xl lg:text-5xl font-extrabold text-slate-900 dark:text-white leading-tight mb-4 lg:mb-6 tracking-tight">
             Master your <br /> 

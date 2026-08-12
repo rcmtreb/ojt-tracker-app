@@ -1180,7 +1180,7 @@ export default function AdminDashboard() {
             </div>
             <div>
               <p className="font-extrabold text-slate-900 dark:text-white text-sm leading-none">Admin Panel</p>
-              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest mt-0.5">v1.4.0</p>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest mt-0.5">v1.5.0</p>
             </div>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer">

@@ -1219,7 +1219,7 @@ function Dashboard() {
             
             <div className="relative z-10">
               {/* Batch Selector Dropdown if multiple batches exist */}
-              {(user?.currentBatch > 1 || (user?.internshipHistory || []).length > 0) && (
+              {(user?.internshipHistory || []).length > 0 && (
                 <div className="mb-5 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
                   <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300">Select OJT Internship View:</span>
                   <select

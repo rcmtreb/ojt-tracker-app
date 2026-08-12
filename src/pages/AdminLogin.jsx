@@ -58,7 +58,7 @@ export default function AdminLogin() {
         <div className="flex justify-center mb-8">
           <div className="inline-flex items-center gap-2.5 bg-emerald-950/60 border border-emerald-800/50 px-4 py-2 rounded-full backdrop-blur-md">
             <Clock className="w-4 h-4 text-emerald-400" />
-            <span className="text-emerald-300 text-xs font-bold uppercase tracking-widest">OJT TRACKER V1.4.0</span>
+            <span className="text-emerald-300 text-xs font-bold uppercase tracking-widest">OJT TRACKER V1.5.0</span>
           </div>
         </div>
 
